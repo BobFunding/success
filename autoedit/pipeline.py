@@ -7,7 +7,8 @@ import time
 from pathlib import Path
 
 from .config import PROJECT_DIR, Settings, load_dotenv
-from .cutter import TimeMap, compute_keep_segments, decide_fillers, detect_silences, render_cut
+from .cutter import (TimeMap, compute_keep_segments, decide_fillers, detect_silences, render_cut,
+                     snap_to_frames)
 from .ffmpeg_utils import extract_audio, probe
 from .illustrate import make_illustrations, place_cards
 from .llm import LLM
@@ -107,8 +108,9 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
         silences = detect_silences(wav, settings.max_pause)
         segments = compute_keep_segments(words, cut_idx, silences, info.duration,
                                          settings.pad, settings.max_pause, settings.min_segment)
+        segments = snap_to_frames(segments, info.fps)
         cut_video = work / "1_cut.mp4"
-        render_cut(video, cut_video, segments, info, settings.quality_cq, work, log)
+        render_cut(video, cut_video, segments, info, settings.quality_cq, work, log, settings.audio_crossfade)
     else:
         segments = [(0.0, info.duration)]
         cut_video = work / "1_cut.mp4"
@@ -165,7 +167,9 @@ def render_from_plan(work: Path, log=print) -> Path:
     info = probe(cut_video)
     final = work / "2_final.mp4"
     render_final(cut_video, final, info, plan["mosaics"], plan["beeps"], plan["inserts"],
-                 settings.mosaic_block, settings.quality_cq, work, log)
+                 settings.mosaic_block, settings.quality_cq, work, log,
+                 fx={"fade_in": settings.fade_in, "fade_out": settings.fade_out,
+                     "card_slide": settings.card_slide, "full_zoom": settings.full_zoom})
     # 삐- 목록을 고쳤을 수 있으므로 자막도 다시 쓴다
     transcript = work / "transcript_cut.json"
     if transcript.exists():

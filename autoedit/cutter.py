@@ -187,6 +187,17 @@ def compute_keep_segments(words: list[Word], cut_idx: dict[int, str], silences: 
     return [(round(a, 3), round(b, 3)) for a, b in merged if b - a >= min_segment]
 
 
+def snap_to_frames(segments: list[tuple[float, float]], fps: float) -> list[tuple[float, float]]:
+    """구간 경계를 프레임 경계에 맞춘다. 영상은 프레임 단위, 오디오는 샘플 단위로 잘리므로
+    맞추지 않으면 구간마다 최대 1프레임씩 어긋남이 쌓여 입 모양과 소리가 틀어진다."""
+    out = []
+    for a, b in segments:
+        fa, fb = round(a * fps), round(b * fps)
+        if fb > fa:
+            out.append((fa / fps, fb / fps))
+    return out
+
+
 # ───────────────────────── 시간 변환 ─────────────────────────
 
 class TimeMap:
@@ -227,12 +238,23 @@ class TimeMap:
 # ───────────────────────── 렌더링 ─────────────────────────
 
 def render_cut(src: Path, dst: Path, segments: list[tuple[float, float]], info: VideoInfo,
-               cq: int, work_dir: Path, log=print) -> None:
-    expr = "+".join(f"between(t,{a:.3f},{b:.3f})" for a, b in segments)
+               cq: int, work_dir: Path, log=print, audio_fade: float = 0.015) -> None:
+    # 구간 [a, b) 의 프레임만 고른다. 반 프레임 당겨서 비교해야 끝 프레임이 하나 더 들어가지 않는다
+    # (프레임 수 = 오디오 길이와 정확히 일치 → 구간이 많아도 싱크가 밀리지 않음)
+    h = 0.5 / info.fps
+    expr = "+".join(f"between(t,{a - h:.5f},{b - h:.5f})" for a, b in segments)
     parts = [f"[0:v]fps={info.fps:.5f},select='{expr}',setpts=N/FRAME_RATE/TB[v]"]
     maps = ["-map", "[v]"]
     if info.has_audio:
-        parts.append(f"[0:a]aselect='{expr}',asetpts=N/SR/TB[a]")
+        # 오디오는 구간마다 잘라 아주 짧게 페이드 인/아웃한 뒤 이어붙인다 → 컷 경계의 '틱' 소리 방지
+        n = len(segments)
+        labels = "".join(f"[as{i}]" for i in range(n))
+        parts.append(f"[0:a]asplit={n}{labels}" if n > 1 else "[0:a]anull[as0]")
+        for i, (a, b) in enumerate(segments):
+            d = min(audio_fade, (b - a) / 4)
+            parts.append(f"[as{i}]atrim=start={a:.4f}:end={b:.4f},asetpts=PTS-STARTPTS,"
+                         f"afade=t=in:d={d:.4f},afade=t=out:st={b - a - d:.4f}:d={d:.4f}[ac{i}]")
+        parts.append("".join(f"[ac{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[a]")
         maps += ["-map", "[a]"]
     script = work_dir / "cut_filter.txt"
     script.write_text(";\n".join(parts), encoding="utf-8")

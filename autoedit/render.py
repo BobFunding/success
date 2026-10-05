@@ -13,7 +13,8 @@ def _even(n: float) -> int:
 
 
 def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict], beeps: list[dict],
-                 inserts: list[dict], block: int, cq: int, work_dir: Path, log=print) -> None:
+                 inserts: list[dict], block: int, cq: int, work_dir: Path, log=print, fx: dict | None = None) -> None:
+    fx = fx or {}
     W, H = info.width, info.height
     inputs = ["-i", str(cut_video)]
     parts: list[str] = []
@@ -40,33 +41,48 @@ def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict
         parts.append(f"{base}{blk}overlay={x}:{y}:enable='between(t,{m['start']:.3f},{m['end']:.3f})'{out}")
         cur = out
 
-    # 2) 설명 일러스트
+    # 2) 설명 일러스트 — 부드러운 전환: 알파 페이드 + (카드) 감속 슬라이드 / (전체 화면) 천천히 확대
+    fi, fo = fx.get("fade_in", FADE), fx.get("fade_out", FADE)
+    slide = fx.get("card_slide", 60) * max(W, H) / 1280
+    zoom = fx.get("full_zoom", 0.04)
     for k, ins in enumerate(inserts):
         png = ins.get("png_path")
         if not png or not Path(png).exists():
             continue
         start, end = float(ins["start"]), float(ins["end"])
         dur = end - start
-        inputs += ["-loop", "1", "-t", f"{dur + 0.1:.3f}", "-i", png]
+        a_in, a_out = min(fi, dur / 3), min(fo, dur / 3)
+        inputs += ["-loop", "1", "-framerate", f"{info.fps:.5f}", "-t", f"{dur + 0.1:.3f}", "-i", png]
         idx = inputs.count("-i") - 1  # 방금 추가한 입력의 번호
-        if ins["placement"] == "side" and ins.get("size"):
-            cw = _even(ins["size"])
-            size, pos = f"{cw}:{cw}", f"{int(ins['x'])}:{int(ins['y'])}"
-        elif ins["placement"] == "side":
-            if W >= H:
+        fades = (f"fade=t=in:st=0:d={a_in:.3f}:alpha=1,"
+                 f"fade=t=out:st={max(0.0, dur - a_out):.3f}:d={a_out:.3f}:alpha=1")
+        img, out = f"[im{k}]", nxt()
+        if ins["placement"] == "side":
+            if ins.get("size"):
+                cw, px, py = _even(ins["size"]), int(ins["x"]), int(ins["y"])
+            elif W >= H:
                 cw = _even(W * 0.42)
                 px, py = W - cw - _even(W * 0.03), (H - cw) // 2
             else:
                 cw = _even(W * 0.80)
                 px, py = (W - cw) // 2, _even(H * 0.10)
-            size, pos = f"{cw}:{cw}", f"{px}:{py}"
+            parts.append(f"[{idx}:v]format=rgba,scale={cw}:{cw}:flags=lanczos,{fades},"
+                         f"setpts=PTS-STARTPTS+{start:.3f}/TB{img}")
+            # 들어올 때: 가장자리 쪽에서 감속하며(ease-out cubic) 제자리로 / 나갈 때: 같은 쪽으로 가속하며 빠짐
+            p_in = f"pow(1-clip((t-{start:.3f})/{a_in:.3f},0,1),3)"
+            p_out = f"pow(clip((t-{end - a_out:.3f})/{a_out:.3f},0,1),2)"
+            offset = f"{slide:.1f}*({p_in}+0.6*{p_out})"
+            if W >= H:
+                sign = 1 if px + cw / 2 >= W / 2 else -1  # 오른쪽 카드는 오른쪽에서, 왼쪽 카드는 왼쪽에서
+                pos = f"x='{px}+{sign}*{offset}':y={py}"
+            else:
+                pos = f"x={px}:y='{py}+{offset}'"
         else:
-            size, pos = f"{W}:{H}", "0:0"
-        img, out = f"[im{k}]", nxt()
-        parts.append(
-            f"[{idx}:v]format=rgba,scale={size}:flags=lanczos,"
-            f"fade=t=in:st=0:d={FADE}:alpha=1,fade=t=out:st={max(0.0, dur - FADE):.3f}:d={FADE}:alpha=1,"
-            f"setpts=PTS-STARTPTS+{start:.3f}/TB{img}")
+            # 켄 번즈: 표시되는 동안 1.0 → 1.0+zoom 배로 아주 천천히 확대 (정지 화면 느낌을 없앰)
+            parts.append(f"[{idx}:v]format=rgba,scale={W}:{H}:flags=lanczos,"
+                         f"scale=w='trunc({W}*(1+{zoom}*t/{dur:.3f})/2)*2':h=-2:eval=frame:flags=bicubic,"
+                         f"crop={W}:{H},{fades},setpts=PTS-STARTPTS+{start:.3f}/TB{img}")
+            pos = "x=0:y=0"
         parts.append(f"{cur}{img}overlay={pos}:eof_action=pass:enable='between(t,{start:.3f},{end:.3f})'{out}")
         cur = out
 

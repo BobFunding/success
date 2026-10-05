@@ -26,7 +26,8 @@ autoedit/
   transcribe.py      Whisper 받아쓰기, 문장 묶기
   cutter.py          필러 판정, 무음 감지, 남길 구간 계산, TimeMap(원본↔컷 시간 변환), 컷 렌더링
   privacy.py         OCR 기반 화면 개인정보, 대본 기반 음성 개인정보
-  illustrate.py      일러스트 기획 / SVG 생성 / 렌더 검수
+  illustrate.py      일러스트 기획 / (claude-svg 엔진) SVG 생성·렌더 검수 / 카드 배치
+  imagegen.py        (gpt 엔진, 기본값) GPT 이미지 병렬 생성 → 손그림 카드/설명 화면으로 합성, 라벨은 직접 그림
   render.py          최종 ffmpeg 합성
   llm.py             Claude 호출 래퍼 (구조화 출력, 서버측 fallback, 키 없을 때 비활성화)
   ffmpeg_utils.py    ffmpeg 경로 탐색, probe, NVENC 감지, 필터 스크립트 인자
@@ -40,6 +41,8 @@ autoedit/
 - **개인정보는 과하게 가리는 쪽이 안전합니다.** 애매하면 가리고, 모자이크 구간은 앞뒤로 여유를 둡니다. 리포트에도 원문을 남기지 않습니다(`pipeline._mask`).
 - **컷은 보수적으로 합니다.** 이해를 해치지 않는 것이 우선이며, 의미가 있을 수 있는 단어는 남깁니다.
 - **자막은 개인정보 감지 뒤에 씁니다.** 삐- 처리한 말이 `subtitles.srt` 에 남으면 안 됩니다(`pipeline.subtitle_cues`).
+- **컷 경계는 프레임에 맞춥니다**(`cutter.snap_to_frames`, select 는 반 프레임 당겨 비교). 안 그러면 컷이 많을 때 입 모양과 소리가 밀립니다. 오디오는 구간마다 짧게 페이드한 뒤 이어붙입니다.
+- **AI 이미지에 글자를 맡기지 않습니다.** GPT 이미지에는 글자를 넣지 말라고 지시하고, 라벨은 `imagegen.compose` 에서 직접 그립니다(한글이 깨지는 것을 막기 위함).
 - **옆 카드는 화면 글자를 피합니다.** OCR 글자 위치(`ocr_text_boxes.json`)를 보고 자리와 크기를 정합니다(`illustrate.place_cards`).
 
 ## 환경

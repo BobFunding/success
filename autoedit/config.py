@@ -38,7 +38,18 @@ class Settings:
     seconds_per_illustration: float = 40.0  # 평균 몇 초에 한 장 정도 넣을지 (상한)
     min_illustration_sec: float = 3.0
     max_illustration_sec: float = 6.0
-    illustration_review: bool = True   # 렌더링 결과를 Claude가 보고 깨진 그림이면 고침
+    illustration_review: bool = True   # (claude-svg 엔진) 렌더링 결과를 Claude가 보고 깨진 그림이면 고침
+    illustration_engine: str = "gpt"   # gpt = GPT 이미지 병렬 생성 / claude-svg = Claude가 SVG로 직접 그림
+    gpt_image_model: str = "gpt-image-2"
+    gpt_image_quality: str = "medium"  # low / medium / high — 높을수록 느리고 비쌈
+    image_workers: int = 6             # 동시에 생성할 이미지 수
+
+    # ── 전환 효과 ──
+    fade_in: float = 0.40              # 일러스트 나타나는 시간(초)
+    fade_out: float = 0.35             # 사라지는 시간(초)
+    card_slide: int = 60               # 옆 카드가 미끄러져 들어오는 거리(px, 720p 기준)
+    full_zoom: float = 0.04            # 전체 화면 일러스트가 천천히 확대되는 정도 (켄 번즈)
+    audio_crossfade: float = 0.015     # 컷 경계 '틱' 소리 방지용 오디오 페이드(초)
 
     # ── 개인정보 ──
     privacy_enabled: bool = True

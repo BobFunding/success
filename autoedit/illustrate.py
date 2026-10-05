@@ -268,7 +268,14 @@ def make_illustrations(sentences: list[dict], total: float, llm: LLM, video_w: i
     except LLMUnavailable as e:
         log(f"[일러스트] 기획 실패: {e}")
         return []
-    with ThreadPoolExecutor(max_workers=4) as pool:
+
+    if settings.illustration_engine == "gpt":
+        from .imagegen import _has_openai_key, make_gpt_illustrations
+        if _has_openai_key():
+            return make_gpt_illustrations(inserts, video_w, video_h, out_dir, settings, log)
+        log("[일러스트] OPENAI_API_KEY 가 없어 Claude SVG 방식으로 그립니다.")
+
+    with ThreadPoolExecutor(max_workers=settings.image_workers) as pool:
         results = list(pool.map(
             lambda pair: draw_insert(pair[1], pair[0] + 1, sentences, llm, video_w, video_h, out_dir,
                                      settings.illustration_review, log),
