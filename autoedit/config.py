@@ -8,7 +8,8 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 
 def load_dotenv(path: Path = PROJECT_DIR / ".env") -> None:
-    """.env 파일의 KEY=VALUE 를 환경변수로 읽어온다 (이미 설정된 값은 유지)."""
+    """.env 파일의 KEY=VALUE 를 환경변수로 읽어온다.
+    편집할 때마다 다시 읽고 .env 값을 우선한다 → 웹 화면을 켜 둔 채로 키를 넣거나 바꿔도 다음 편집부터 바로 적용."""
     if not path.exists():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -16,7 +17,9 @@ def load_dotenv(path: Path = PROJECT_DIR / ".env") -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        value = value.strip().strip('"').strip("'")
+        if value:  # 빈 값(KEY=)은 무시해서 시스템에 설정된 키를 지우지 않는다
+            os.environ[key.strip()] = value
 
 
 @dataclass
@@ -29,7 +32,7 @@ class Settings:
     # ── 1차 컷 편집 ──
     cut_enabled: bool = True
     pad: float = 0.12            # 말 앞뒤로 남겨둘 여유(초)
-    max_pause: float = 0.45      # 이보다 긴 무음은 잘라서 pad*2 정도만 남김
+    max_pause: float = 0.45    # 이보다 긴 무음은 잘라서 pad*2 정도만 남김
     min_segment: float = 0.20    # 이보다 짧게 남는 조각은 버림
     llm_filler_review: bool = True  # 애매한 필러("그", "아", "이제" 등)는 Claude가 문맥 보고 판단
 
