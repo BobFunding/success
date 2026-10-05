@@ -9,7 +9,7 @@
 
 업로드한 영상을 아래 순서로 처리하는 Python 파이프라인입니다.
 
-1. **받아쓰기**: faster-whisper(large-v3)로 단어 단위 타임스탬프를 얻습니다.
+1. **받아쓰기**: faster-whisper(large-v3)로 단어 단위 타임스탬프를 얻고, Claude가 주제 용어와 문맥을 보고 잘못 받아 적은 단어를 교정합니다(단어 수와 시간은 유지).
 2. **1차 컷**: 무음과 필러워드("어", "음")를 잘라 `1_cut.mp4` 를 만듭니다.
 3. **개인정보**: 화면은 EasyOCR + 정규식 + Claude 판단으로 찾아 모자이크하고, 음성은 대본에서 찾아 삐- 처리합니다.
 4. **설명 일러스트**: Claude가 삽입 지점을 기획하고, 플랫 벡터 + 핸드드로잉 카툰 스타일 SVG를 그린 뒤 resvg로 PNG를 만듭니다.
@@ -24,6 +24,7 @@ autoedit/
   config.py          Settings 데이터클래스 (모든 조절값), .env 로더
   pipeline.py        전체 순서 조율, report.md / subtitles.srt / edit_plan.json 작성
   transcribe.py      Whisper 받아쓰기, 문장 묶기
+  correct.py         Claude 받아쓰기 교정 (단어 하나 → 단어 하나만, 숫자·필러는 손대지 않음)
   cutter.py          필러 판정, 무음 감지, 남길 구간 계산, TimeMap(원본↔컷 시간 변환), 컷 렌더링
   privacy.py         OCR 기반 화면 개인정보, 대본 기반 음성 개인정보
   illustrate.py      일러스트 기획 / (claude-svg 엔진) SVG 생성·렌더 검수 / 카드 배치
@@ -31,6 +32,7 @@ autoedit/
   render.py          최종 ffmpeg 합성
   llm.py             Claude 호출 래퍼 (구조화 출력, 서버측 fallback, 키 없을 때 비활성화)
   ffmpeg_utils.py    ffmpeg 경로 탐색, probe, NVENC 감지, 필터 스크립트 인자
+tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·API 키 없이 실행)
 ```
 
 ## 핵심 설계 원칙
@@ -58,12 +60,19 @@ autoedit/
 - Whisper는 필러를 생략하는 경향이 있어 `FILLER_PROMPT` 로 받아적게 유도합니다. `vad_filter` 를 켜면 필러가 사라집니다.
 - OCR 재사용 판정은 평균 차이가 아니라 **바뀐 픽셀 비율**로 해야 작은 알림 글자도 잡힙니다.
 - 모자이크 블록은 고정 크기면 큰 글자가 읽힙니다. 글자 높이 기준 세로 3칸 이하로 뭉갭니다.
-- Whisper의 `hotwords` 나 `initial_prompt` 로는 발음이 바뀌는 단어("단리"→[달리])를 바로잡지 못합니다.
+- Whisper의 `hotwords` 나 `initial_prompt` 로는 발음이 바뀌는 단어("단리"→[달리])를 바로잡지 못합니다. 그래서 `correct.py` 가 받아쓰기 뒤에 교정합니다. 교정은 단어 수와 타임스탬프를 바꾸면 안 됩니다(컷·삐-·자막이 모두 단어 시간 기준).
 - Windows 음성합성(SAPI)으로 테스트 음성을 만들 때는 PromptBuilder에 `ko-KR` 문화권을 지정해야 한글을 읽습니다.
 
 ## 검증 방법
 
-테스트 프레임워크는 아직 없습니다. 변경 후에는 짧은 테스트 영상으로 끝까지 실행하고, 결과물을 직접 확인하세요.
+순수 로직(필러 판정, 남길 구간 계산, TimeMap, 자막 분할, 개인정보 정규식, 카드 배치, 받아쓰기 교정)은 pytest 단위 테스트가 있습니다. Claude 호출은 `tests/conftest.py` 의 `FakeLLM` 으로 대신하므로 API 키 없이 돌아갑니다.
+
+```bash
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.venv\Scripts\python.exe -m pytest
+```
+
+영상 처리를 바꿨다면 단위 테스트와 별개로 짧은 테스트 영상으로 끝까지 실행하고, 결과물을 직접 확인하세요.
 
 ```bash
 .venv\Scripts\python.exe run.py 테스트영상.mp4

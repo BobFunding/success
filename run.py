@@ -26,6 +26,7 @@ def main() -> None:
     p.add_argument("--engine", choices=["gpt", "claude-svg"], default=Settings.illustration_engine,
                    help="일러스트 생성 방식: gpt(GPT 이미지 병렬 생성) / claude-svg")
     p.add_argument("--terms", default="", help="주제 용어 힌트(쉼표 구분): 받아쓰기 정확도 향상. 예: 복리,단리")
+    p.add_argument("--no-correct", action="store_true", help="Claude 받아쓰기 교정 끄기")
     p.add_argument("--whisper", default=Settings.whisper_model, help="Whisper 모델 (large-v3, medium, small)")
     a = p.parse_args()
 
@@ -45,6 +46,7 @@ def main() -> None:
         privacy_allowlist=[x for x in a.allow.split(",") if x.strip()],
         whisper_model=a.whisper,
         vocabulary=[x.strip() for x in a.terms.split(",") if x.strip()],
+        transcript_correction=not a.no_correct,
         illustration_engine=a.engine,
     )
     run(a.video, s)

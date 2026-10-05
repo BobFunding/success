@@ -28,6 +28,7 @@ class Settings:
     whisper_model: str = "large-v3"
     language: str = "ko"
     vocabulary: list[str] = field(default_factory=list)  # 주제 용어 힌트 (예: 복리, 단리) → 받아쓰기 오류 감소
+    transcript_correction: bool = True  # Claude가 용어·문맥을 보고 잘못 받아 적은 단어를 교정 (단어 수·시간은 유지)
 
     # ── 1차 컷 편집 ──
     cut_enabled: bool = True
