@@ -56,3 +56,23 @@ def test_write_srt_format(tmp_path):
 ])
 def test_mask(text, expected):
     assert _mask(text) == expected
+
+
+def test_write_ass_with_translation(tmp_path):
+    from autoedit.pipeline import write_ass
+    words = [Word(0.0, 0.8, "안녕하세요."), Word(2.0, 2.5, "I"), Word(2.5, 3.0, "like"), Word(3.0, 3.6, "it.")]
+    tr = [{"start": 2.0, "end": 3.6, "text": "좋아요."}]
+    path = tmp_path / "s.ass"
+    write_ass(words, [], path, 3840, 2160, "Pretendard", 0.055, tr)
+    events = [l for l in path.read_text(encoding="utf-8").splitlines() if l.startswith("Dialogue")]
+    assert any(",Main,," in l and "안녕하세요." in l for l in events)    # 번역 불필요 → 크게
+    assert any(",Default,," in l and "I like it." in l for l in events)  # 원문 → 작게
+    assert any(",Trans,," in l and "좋아요." in l for l in events)
+    assert "PlayResX: 3840" in path.read_text(encoding="utf-8")
+
+
+def test_masked_words_hide_beeps_for_translation():
+    from autoedit.pipeline import masked_words
+    words = words_from("call me at 010 1234 5678 okay")
+    shown = masked_words(words, [{"start": 1.45, "end": 2.95}])
+    assert [w.text for w in shown] == ["call", "me", "at", "(삐-)", "okay"]

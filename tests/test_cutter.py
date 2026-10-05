@@ -24,6 +24,12 @@ def test_strong_fillers_cut_without_llm():
     assert set(cuts) == {1, 3}  # "그" 는 애매한 후보라 규칙만으로는 남긴다
 
 
+def test_english_fillers_cut():
+    words = words_from("Um, I like uh Korean style hmm... umbrella")
+    cuts = decide_fillers(words, None, log=lambda *_: None)
+    assert set(cuts) == {0, 3, 6}  # umbrella 는 필러가 아님
+
+
 def test_long_filler_is_kept():
     # 2초 넘게 늘어진 "음" 은 생각하는 시간일 수 있어 자르지 않는다
     words = [Word(0.0, 0.4, "네"), Word(0.5, 3.0, "음"), Word(3.1, 3.5, "좋아요")]

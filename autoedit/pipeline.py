@@ -15,6 +15,7 @@ from .illustrate import make_illustrations, place_cards
 from .llm import LLM
 from .privacy import detect_screen_pii, detect_spoken_pii, regex_pii
 from .render import render_final
+from .translate import translate_sentences
 from .transcribe import Word, group_sentences, transcribe
 
 
@@ -23,9 +24,8 @@ def _fmt(t: float) -> str:
     return f"{int(m):02d}:{s:05.2f}"
 
 
-def subtitle_cues(words: list[Word], beeps: list[dict], max_chars: int = 22,
-                  min_show: float = 0.8) -> list[tuple[float, float, str]]:
-    """자막 조각 만들기: 문장 단위로 나눈 뒤 긴 문장은 비슷한 길이로 쪼개고, 삐- 처리된 말은 자막에서도 가린다."""
+def masked_words(words: list[Word], beeps: list[dict]) -> list[Word]:
+    """삐- 처리된 말을 "(삐-)" 로 바꾼 단어 목록. 자막·번역은 반드시 이걸로 만든다 (개인정보가 새지 않게)."""
     texts = []
     for w in words:
         mid = (w.start + w.end) / 2
@@ -38,7 +38,13 @@ def subtitle_cues(words: list[Word], beeps: list[dict], max_chars: int = 22,
             shown[-1].end = w.end
         else:
             shown.append(Word(w.start, w.end, t, w.prob))
+    return shown
 
+
+def subtitle_cues(words: list[Word], beeps: list[dict], max_chars: int = 22,
+                  min_show: float = 0.8) -> list[tuple[float, float, str]]:
+    """자막 조각 만들기: 문장 단위로 나눈 뒤 긴 문장은 비슷한 길이로 쪼개고, 삐- 처리된 말은 자막에서도 가린다."""
+    shown = masked_words(words, beeps)
     cues: list[tuple[float, float, str]] = []
     for sent in group_sentences(shown, max_gap=0.6, max_chars=10_000):
         a, b = sent["word_range"]
@@ -75,6 +81,82 @@ def write_srt(words: list[Word], beeps: list[dict], path: Path) -> None:
     lines = []
     for n, (s, e, text) in enumerate(subtitle_cues(words, beeps), 1):
         lines += [str(n), f"{ts(s)} --> {ts(e)}", text, ""]
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_ass(words: list[Word], beeps: list[dict], path: Path, width: int, height: int,
+              font: str, size: float, translations: list[dict] | None = None) -> None:
+    """화면에 입힐 자막(ASS). 흰 글자 + 두꺼운 검은 테두리, 아래 가운데. 크기는 영상 높이에 비례.
+    번역(translations)이 있으면 번역문을 크게, 원문은 그 아래 작게 띄운다."""
+    def ts(t: float) -> str:
+        cs = int(round(t * 100))
+        h, cs = divmod(cs, 360000)
+        m, cs = divmod(cs, 6000)
+        s, cs = divmod(cs, 100)
+        return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+    fs = round(height * size)
+    margin_v = round(height * 0.06)
+    tfs = fs  # 번역문 크기
+    if translations:
+        fs = round(fs * 0.62)  # 원문은 작게, 화면 맨 아래
+        margin_v = round(height * 0.035)
+    outline = max(2, round(fs * 0.09))
+    t_outline = max(2, round(tfs * 0.09))
+    t_margin = margin_v + round(fs * 1.35)  # 원문 한 줄 위
+    lines = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {width}", f"PlayResY: {height}",
+             "WrapStyle: 2", "ScaledBorderAndShadow: yes", "",
+             "[V4+ Styles]",
+             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, "
+             "Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
+             "Alignment, MarginL, MarginR, MarginV, Encoding",
+             f"Style: Default,{font},{fs},&H00FFFFFF,&H00FFFFFF,&H00141414,&H64000000,-1,0,0,0,100,100,0,0,1,"
+             f"{outline},{max(1, outline // 2)},2,{round(width * 0.05)},{round(width * 0.05)},{margin_v},1",
+             # 번역문: 노란빛 흰색으로 원문과 구분
+             f"Style: Trans,{font},{tfs},&H00B4F0FF,&H00FFFFFF,&H00141414,&H64000000,-1,0,0,0,100,100,0,0,1,"
+             f"{t_outline},{max(1, t_outline // 2)},2,{round(width * 0.05)},{round(width * 0.05)},{t_margin},1",
+             # 번역이 필요 없는 말(이미 목표 언어)은 원문을 번역문 크기로 크게
+             f"Style: Main,{font},{tfs},&H00FFFFFF,&H00FFFFFF,&H00141414,&H64000000,-1,0,0,0,100,100,0,0,1,"
+             f"{t_outline},{max(1, t_outline // 2)},2,{round(width * 0.05)},{round(width * 0.05)},{t_margin},1", "",
+             "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    for s, e, text in subtitle_cues(words, beeps):
+        text = text.replace("{", "(").replace("}", ")").replace("\n", " ")
+        covered = any(t["start"] < e and s < t["end"] for t in translations or [])
+        style = "Main" if translations and not covered else "Default"
+        lines.append(f"Dialogue: 0,{ts(s)},{ts(e)},{style},,0,0,0,,{text}")
+    for t in translations or []:
+        text = t["text"].replace("{", "(").replace("}", ")").replace("\n", " ")
+        lines.append(f"Dialogue: 1,{ts(t['start'])},{ts(t['end'])},Trans,,0,0,0,,{text}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_subtitles(work: Path, words: list[Word], beeps: list[dict], settings: Settings,
+                    width: int, height: int) -> Path | None:
+    """subtitles.srt (업로드용) 와 화면에 입힐 subtitles.ass 를 쓴다. 입힐 자막 경로를 돌려준다."""
+    if not words:
+        return None
+    write_srt(words, beeps, work / "subtitles.srt")
+    tr_path = work / "translations.json"
+    translations = json.loads(tr_path.read_text(encoding="utf-8")) if tr_path.exists() else []
+    if translations:
+        _write_plain_srt(translations, work / f"subtitles_{settings.subtitle_translate or 'translated'}.srt")
+    if not settings.burn_subtitles:
+        return None
+    ass = work / "subtitles.ass"
+    write_ass(words, beeps, ass, width, height, settings.subtitle_font, settings.subtitle_size, translations)
+    return ass
+
+
+def _write_plain_srt(items: list[dict], path: Path) -> None:
+    def ts(t: float) -> str:
+        ms = int(round(t * 1000))
+        h, ms = divmod(ms, 3600000)
+        m, ms = divmod(ms, 60000)
+        s, ms = divmod(ms, 1000)
+        return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+    lines = []
+    for n, it in enumerate(items, 1):
+        lines += [str(n), f"{ts(it['start'])} --> {ts(it['end'])}", it["text"], ""]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -119,7 +201,8 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
             cut_idx = {}
     cut_video = work / "1_cut.mp4"
     if segments:
-        render_cut(video, cut_video, segments, info, settings.quality_cq, work, log, settings.audio_crossfade)
+        render_cut(video, cut_video, segments, info, settings.quality_cq, work, log, settings.audio_crossfade,
+                   settings.x264_preset)
     else:
         segments = [(0.0, info.duration)]
         shutil.copy(video, cut_video)
@@ -140,8 +223,13 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
         (work / "ocr_text_boxes.json").write_text(json.dumps(text_boxes), encoding="utf-8")
         if settings.beep_spoken_pii and cut_words:
             beeps = detect_spoken_pii(cut_words, llm, settings.privacy_allowlist, log)
-    if cut_words:  # 개인정보 감지 뒤에 써야 삐- 처리한 말이 자막에 남지 않는다
-        write_srt(cut_words, [b.to_dict() for b in beeps], work / "subtitles.srt")
+    # 자막은 개인정보 감지 뒤에 써야 삐- 처리한 말이 남지 않는다 (render_from_plan 에서 씀)
+    if settings.subtitle_translate and cut_words:
+        masked = masked_words(cut_words, [b.to_dict() for b in beeps])
+        translations = translate_sentences(group_sentences(masked), settings.subtitle_translate, llm, log)
+        if translations:
+            (work / "translations.json").write_text(json.dumps(translations, ensure_ascii=False, indent=1),
+                                                    encoding="utf-8")
 
     # ── 4. 설명 일러스트 ──
     inserts = []
@@ -175,16 +263,15 @@ def render_from_plan(work: Path, log=print) -> Path:
     cut_video = work / "1_cut.mp4"
     info = probe(cut_video)
     final = work / "2_final.mp4"
+    # 삐- 목록이나 대본(transcript_cut.json)을 고쳤을 수 있으므로 자막은 렌더링할 때마다 다시 쓴다
+    transcript = work / "transcript_cut.json"
+    words = [Word(**w) for w in json.loads(transcript.read_text(encoding="utf-8"))] if transcript.exists() else []
+    subs = write_subtitles(work, words, plan["beeps"], settings, info.width, info.height)
     render_final(cut_video, final, info, plan["mosaics"], plan["beeps"], plan["inserts"],
                  settings.mosaic_block, settings.quality_cq, work, log,
                  fx={"fade_in": settings.fade_in, "fade_out": settings.fade_out,
-                     "card_slide": settings.card_slide, "full_zoom": settings.full_zoom})
-    # 삐- 목록을 고쳤을 수 있으므로 자막도 다시 쓴다
-    transcript = work / "transcript_cut.json"
-    if transcript.exists():
-        words = [Word(**w) for w in json.loads(transcript.read_text(encoding="utf-8"))]
-        if words:
-            write_srt(words, plan["beeps"], work / "subtitles.srt")
+                     "card_slide": settings.card_slide, "full_zoom": settings.full_zoom},
+                 subtitles=subs, x264_preset=settings.x264_preset)
     return final
 
 

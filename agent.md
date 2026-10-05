@@ -13,7 +13,7 @@
 2. **1차 컷**: 무음과 필러워드("어", "음")를 잘라 `1_cut.mp4` 를 만듭니다.
 3. **개인정보**: 화면은 EasyOCR + 정규식 + Claude 판단으로 찾아 모자이크하고, 음성은 대본에서 찾아 삐- 처리합니다.
 4. **설명 일러스트**: Claude가 삽입 지점을 기획하고, 플랫 벡터 + 핸드드로잉 카툰 스타일 SVG를 그린 뒤 resvg로 PNG를 만듭니다.
-5. **최종 합성**: ffmpeg 필터 그래프 하나로 모자이크, 삐-, 일러스트를 합쳐 `2_final.mp4` 를 만듭니다.
+5. **최종 합성**: ffmpeg 필터 그래프 하나로 모자이크, 삐-, 일러스트·스티커, 자막(번역 자막 포함)을 합쳐 `2_final.mp4` 를 만듭니다.
 
 ## 구조
 
@@ -29,7 +29,8 @@ autoedit/
   privacy.py         OCR 기반 화면 개인정보, 대본 기반 음성 개인정보
   illustrate.py      일러스트 기획 / (claude-svg 엔진) SVG 생성·렌더 검수 / 카드 배치
   imagegen.py        (gpt 엔진, 기본값) GPT 이미지 병렬 생성 → 손그림 카드/설명 화면으로 합성, 라벨은 직접 그림
-  render.py          최종 ffmpeg 합성
+  translate.py       번역 자막 (외국어 문장 → 한국어, translations.json)
+  render.py          최종 ffmpeg 합성 (모자이크·삐-·일러스트·스티커·ASS 자막)
   llm.py             Claude 호출 래퍼 (구조화 출력, 서버측 fallback, 키 없을 때 비활성화)
   ffmpeg_utils.py    ffmpeg 경로 탐색, probe, NVENC 감지, 필터 스크립트 인자
 tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·API 키 없이 실행)
@@ -45,6 +46,8 @@ tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·A
 - **자막은 개인정보 감지 뒤에 씁니다.** 삐- 처리한 말이 `subtitles.srt` 에 남으면 안 됩니다(`pipeline.subtitle_cues`).
 - **컷 경계는 프레임에 맞춥니다**(`cutter.snap_to_frames`, select 는 반 프레임 당겨 비교). 안 그러면 컷이 많을 때 입 모양과 소리가 밀립니다. 오디오는 구간마다 짧게 페이드한 뒤 이어붙입니다.
 - **AI 이미지에 글자를 맡기지 않습니다.** GPT 이미지에는 글자를 넣지 말라고 지시하고, 라벨은 `imagegen.compose` 에서 직접 그립니다(한글이 깨지는 것을 막기 위함).
+- **자막과 번역은 가린 대본으로 만듭니다**(`pipeline.masked_words`). 삐- 처리한 말이 번역문으로 새면 안 됩니다.
+- **일러스트 배치는 세 가지입니다**: `full`(전체 설명 화면), `side`(옆 카드), `sticker`(말하는 사람 근처의 작은 아이콘, x·y·size 지정).
 - **옆 카드는 화면 글자를 피합니다.** OCR 글자 위치(`ocr_text_boxes.json`)를 보고 자리와 크기를 정합니다(`illustrate.place_cards`).
 
 ## 환경
@@ -56,7 +59,11 @@ tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·A
 
 ## 알려진 함정
 
+- 언어가 섞인 영상(한국어+영어 인터뷰)에서 언어를 `ko` 로 고정하면 영어 구간을 통째로 건너뛰고, `multilingual=True` 는 영어를 한국어로 번역해 지어냅니다. `language="ko+en"` 으로 언어마다 받아 적고 구간별로 avg_logprob 가 높은 쪽을 고릅니다(`transcribe.merge_language_passes`).
+- 손으로 든 카메라는 매 프레임 화면이 조금씩 흔들려서 OCR 재사용 판정이 거의 안 걸립니다(82초 4K 영상에 OCR 81회, 552초, CPU).
+- GPU 없이 4K 60fps 를 x264 `medium` 으로 뽑으면 매우 느립니다. `x264_preset="veryfast"` 면 82초 영상에 컷 228초, 최종 180초(4코어).
 - faster-whisper에 파일 경로를 넘기면 최신 PyAV와 충돌합니다(`metadata_errors` 오류). wav를 numpy 배열로 읽어서 넘기세요.
+- 필러 규칙(`cutter.STRONG_FILLER`)은 한국어("어", "음")와 영어("um", "uh", "hmm")를 함께 봅니다.
 - Whisper는 필러를 생략하는 경향이 있어 `FILLER_PROMPT` 로 받아적게 유도합니다. `vad_filter` 를 켜면 필러가 사라집니다.
 - OCR 재사용 판정은 평균 차이가 아니라 **바뀐 픽셀 비율**로 해야 작은 알림 글자도 잡힙니다.
 - 모자이크 블록은 고정 크기면 큰 글자가 읽힙니다. 글자 높이 기준 세로 3칸 이하로 뭉갭니다.
