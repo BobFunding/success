@@ -18,7 +18,7 @@
 ## 구조
 
 ```
-app.py               Gradio 웹 UI (실행.bat 이 이걸 띄움)
+app.py               Gradio 웹 UI (web.bat 이 이걸 띄움)
 run.py               CLI. --rerender <작업폴더> 로 edit_plan.json 기준 재렌더링
 autoedit/
   config.py          Settings 데이터클래스 (모든 조절값), .env 로더
