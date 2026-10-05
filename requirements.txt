@@ -1,0 +1,10 @@
+# GPU(CUDA) 용 torch 는 먼저 따로 설치:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+faster-whisper
+anthropic
+pydantic
+easyocr
+opencv-python-headless
+resvg-py
+gradio
+numpy
