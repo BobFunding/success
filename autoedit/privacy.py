@@ -138,8 +138,10 @@ OCR 오타가 섞여 있을 수 있으니 형태로 판단하세요. 애매하�
 
 
 def detect_screen_pii(video: Path, interval: float, llm: LLM | None, allowlist: list[str],
-                      frame_w: int, frame_h: int, log=print) -> list[Mosaic]:
+                      frame_w: int, frame_h: int, log=print) -> tuple[list[Mosaic], list[tuple[float, tuple]]]:
+    """반환: (모자이크 목록, 화면 글자 위치 [(시각, 상자)] — 일러스트 카드가 글자를 피해 가도록 쓰임)"""
     dets, interval = _ocr_video(video, interval, log)
+    text_boxes = [(d.t, d.box) for d in dets]
     allow = [a.strip() for a in allowlist if a.strip()]
 
     # 1) 줄 단위 + 상자 단위로 정규식 검사
@@ -203,7 +205,7 @@ def detect_screen_pii(video: Path, interval: float, llm: LLM | None, allowlist: 
         mosaics.append(Mosaic(round(max(0.0, tr["first"] - interval), 2), round(tr["last"] + interval, 2),
                               x1, y1, x2 - x1, y2 - y1, tr["kind"], tr["text"]))
     log(f"[개인정보] 화면 속 개인정보 {len(mosaics)}건 모자이크 예정")
-    return mosaics
+    return mosaics, text_boxes
 
 
 def _iou(a, b) -> float:

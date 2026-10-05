@@ -9,7 +9,7 @@ from autoedit.config import Settings
 from autoedit.pipeline import run
 
 
-def process(video, do_cut, do_illust, do_privacy, max_pause, illust_every, allow, review):
+def process(video, do_cut, do_illust, do_privacy, max_pause, illust_every, allow, review, terms):
     if not video:
         yield "영상을 먼저 올려주세요.", None, None, None, None
         return
@@ -17,6 +17,7 @@ def process(video, do_cut, do_illust, do_privacy, max_pause, illust_every, allow
         cut_enabled=do_cut, illustrations_enabled=do_illust, privacy_enabled=do_privacy,
         max_pause=max_pause, seconds_per_illustration=illust_every, illustration_review=review,
         privacy_allowlist=[x for x in allow.split(",") if x.strip()],
+        vocabulary=[x.strip() for x in terms.split(",") if x.strip()],
     )
     logs: list[str] = []
     q: queue.Queue = queue.Queue()
@@ -64,6 +65,7 @@ with gr.Blocks(title="유튜브 자동 편집기") as demo:
                                          label="일러스트 빈도 상한 (N초에 한 장)")
                 review = gr.Checkbox(True, label="일러스트 자동 검수 (품질↑, 비용↑)")
                 allow = gr.Textbox(label="가리지 않을 단어 (쉼표 구분)", placeholder="내 이름, 채널명, 회사명")
+                terms = gr.Textbox(label="영상 주제 용어 (쉼표 구분, 받아쓰기 정확도↑)", placeholder="복리, 단리, ETF")
             btn = gr.Button("자동 편집 시작", variant="primary")
         with gr.Column(scale=1):
             log_box = gr.Textbox(label="진행 상황", lines=18, max_lines=18, autoscroll=True)
@@ -73,7 +75,7 @@ with gr.Blocks(title="유튜브 자동 편집기") as demo:
         gallery = gr.Gallery(label="생성된 일러스트", columns=3, height=320)
     report = gr.Markdown()
 
-    btn.click(process, [video, do_cut, do_illust, do_privacy, max_pause, illust_every, allow, review],
+    btn.click(process, [video, do_cut, do_illust, do_privacy, max_pause, illust_every, allow, review, terms],
               [log_box, final, cut, gallery, report])
 
 if __name__ == "__main__":

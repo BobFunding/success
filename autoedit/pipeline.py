@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import time
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 from .config import PROJECT_DIR, Settings, load_dotenv
 from .cutter import TimeMap, compute_keep_segments, decide_fillers, detect_silences, render_cut
 from .ffmpeg_utils import extract_audio, probe
-from .illustrate import make_illustrations
+from .illustrate import make_illustrations, place_cards
 from .llm import LLM
 from .privacy import detect_screen_pii, detect_spoken_pii
 from .render import render_final
@@ -20,16 +21,58 @@ def _fmt(t: float) -> str:
     return f"{int(m):02d}:{s:05.2f}"
 
 
-def write_srt(words: list[Word], path: Path) -> None:
+def subtitle_cues(words: list[Word], beeps: list[dict], max_chars: int = 22,
+                  min_show: float = 0.8) -> list[tuple[float, float, str]]:
+    """자막 조각 만들기: 문장 단위로 나눈 뒤 긴 문장은 비슷한 길이로 쪼개고, 삐- 처리된 말은 자막에서도 가린다."""
+    texts = []
+    for w in words:
+        mid = (w.start + w.end) / 2
+        hidden = any(b["start"] <= mid <= b["end"] for b in beeps)
+        texts.append("(삐-)" if hidden else w.text)
+    # 연속된 (삐-) 는 하나로 합치고, 삐- 소리가 나는 동안 계속 보이도록 끝 시각을 늘린다
+    shown: list[Word] = []
+    for i, (w, t) in enumerate(zip(words, texts)):
+        if t == "(삐-)" and i > 0 and texts[i - 1] == "(삐-)":
+            shown[-1].end = w.end
+        else:
+            shown.append(Word(w.start, w.end, t, w.prob))
+
+    cues: list[tuple[float, float, str]] = []
+    for sent in group_sentences(shown, max_gap=0.6, max_chars=10_000):
+        a, b = sent["word_range"]
+        idx = list(range(a, b + 1))
+        total = len(sent["text"])
+        n = max(1, math.ceil(total / max_chars))
+        target = total / n
+        chunk: list[int] = []
+        for k, i in enumerate(idx):
+            chunk.append(i)
+            length = sum(len(shown[j].text) + 1 for j in chunk)
+            rest = len(idx) - k - 1
+            # 목표 길이에 닿았거나, 쉼표에서 적당히 찼으면 끊는다 (마지막 조각이 너무 짧지 않게)
+            if rest and (length >= target or (shown[i].text.endswith(",") and length >= target * 0.6)):
+                cues.append((shown[chunk[0]].start, shown[chunk[-1]].end, " ".join(shown[j].text for j in chunk)))
+                chunk = []
+        if chunk:
+            cues.append((shown[chunk[0]].start, shown[chunk[-1]].end, " ".join(shown[j].text for j in chunk)))
+
+    # 너무 짧게 스쳐 지나가는 자막은 다음 자막 직전까지 늘려서 읽을 시간을 준다
+    out = []
+    for k, (s, e, t) in enumerate(cues):
+        nxt = cues[k + 1][0] if k + 1 < len(cues) else e + min_show
+        out.append((s, max(e, min(s + min_show, nxt)), t))
+    return out
+
+
+def write_srt(words: list[Word], beeps: list[dict], path: Path) -> None:
     def ts(t: float) -> str:
         h, rem = divmod(t, 3600)
         m, s = divmod(rem, 60)
         return f"{int(h):02d}:{int(m):02d}:{int(s):02d},{int(round((s % 1) * 1000)):03d}"
 
-    lines, n = [], 0
-    for sent in group_sentences(words, max_gap=0.6, max_chars=24):
-        n += 1
-        lines += [str(n), f"{ts(sent['start'])} --> {ts(sent['end'])}", sent["text"], ""]
+    lines = []
+    for n, (s, e, text) in enumerate(subtitle_cues(words, beeps), 1):
+        lines += [str(n), f"{ts(s)} --> {ts(e)}", text, ""]
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -51,7 +94,7 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
     words: list[Word] = []
     if info.has_audio:
         extract_audio(video, wav)
-        words = transcribe(wav, settings.whisper_model, settings.language, log)
+        words = transcribe(wav, settings.whisper_model, settings.language, settings.vocabulary, log)
     else:
         log("[받아쓰기] 오디오가 없는 영상입니다. 컷 편집·일러스트·말소리 검사는 건너뜁니다.")
     (work / "transcript_original.json").write_text(
@@ -77,23 +120,25 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
         f"({info.duration - cut_info.duration:.1f}초 단축)")
     (work / "transcript_cut.json").write_text(
         json.dumps([w.to_dict() for w in cut_words], ensure_ascii=False, indent=1), encoding="utf-8")
-    if cut_words:
-        write_srt(cut_words, work / "subtitles.srt")
     sentences = group_sentences(cut_words)
 
     # ── 3. 개인정보 감지 ──
-    mosaics, beeps = [], []
+    mosaics, beeps, text_boxes = [], [], []
     if settings.privacy_enabled:
-        mosaics = detect_screen_pii(cut_video, settings.ocr_interval, llm, settings.privacy_allowlist,
+        mosaics, text_boxes = detect_screen_pii(cut_video, settings.ocr_interval, llm, settings.privacy_allowlist,
                                     cut_info.width, cut_info.height, log)
+        (work / "ocr_text_boxes.json").write_text(json.dumps(text_boxes), encoding="utf-8")
         if settings.beep_spoken_pii and cut_words:
             beeps = detect_spoken_pii(cut_words, llm, settings.privacy_allowlist, log)
+    if cut_words:  # 개인정보 감지 뒤에 써야 삐- 처리한 말이 자막에 남지 않는다
+        write_srt(cut_words, [b.to_dict() for b in beeps], work / "subtitles.srt")
 
     # ── 4. 설명 일러스트 ──
     inserts = []
     if settings.illustrations_enabled and sentences:
         inserts = make_illustrations(sentences, cut_info.duration, llm, cut_info.width, cut_info.height,
                                      work / "illustrations", settings, log)
+        place_cards(inserts, text_boxes, cut_info.width, cut_info.height)
 
     # ── 5. 편집 계획 저장 → 최종 렌더링 ──
     plan = {
@@ -121,6 +166,12 @@ def render_from_plan(work: Path, log=print) -> Path:
     final = work / "2_final.mp4"
     render_final(cut_video, final, info, plan["mosaics"], plan["beeps"], plan["inserts"],
                  settings.mosaic_block, settings.quality_cq, work, log)
+    # 삐- 목록을 고쳤을 수 있으므로 자막도 다시 쓴다
+    transcript = work / "transcript_cut.json"
+    if transcript.exists():
+        words = [Word(**w) for w in json.loads(transcript.read_text(encoding="utf-8"))]
+        if words:
+            write_srt(words, plan["beeps"], work / "subtitles.srt")
     return final
 
 

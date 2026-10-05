@@ -24,6 +24,7 @@ class Settings:
     # ── 받아쓰기 ──
     whisper_model: str = "large-v3"
     language: str = "ko"
+    vocabulary: list[str] = field(default_factory=list)  # 주제 용어 힌트 (예: 복리, 단리) → 받아쓰기 오류 감소
 
     # ── 1차 컷 편집 ──
     cut_enabled: bool = True

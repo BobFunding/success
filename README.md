@@ -23,6 +23,7 @@
 ```bash
 .venv\Scripts\python.exe run.py 내영상.mp4
 .venv\Scripts\python.exe run.py 내영상.mp4 --allow "내이름,채널명" --illust-every 30
+.venv\Scripts\python.exe run.py 내영상.mp4 --terms "복리,단리,ETF"   # 주제 용어 힌트
 ```
 
 ## 결과물 (`output/영상이름_날짜시간/`)

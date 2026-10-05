@@ -38,7 +38,8 @@ def _add_cuda_dll_dirs() -> None:
         pass
 
 
-def transcribe(audio_path: Path, model_name: str, language: str, log=print) -> list[Word]:
+def transcribe(audio_path: Path, model_name: str, language: str, vocabulary: list[str] | None = None,
+               log=print) -> list[Word]:
     _add_cuda_dll_dirs()
     from faster_whisper import WhisperModel
 
@@ -56,10 +57,13 @@ def transcribe(audio_path: Path, model_name: str, language: str, log=print) -> l
                 audio,
                 language=language,
                 word_timestamps=True,
-                initial_prompt=FILLER_PROMPT,
+                # 주제 용어는 초기 프롬프트에도 넣는다 (hotwords 만으로는 "단리"→[달리] 같은 발음 변화를 못 이김)
+                initial_prompt=FILLER_PROMPT + (f" 오늘 주제: {', '.join(vocabulary)}." if vocabulary else ""),
                 condition_on_previous_text=False,
                 vad_filter=False,  # VAD 를 켜면 짧은 필러가 같이 날아간다
                 beam_size=5,
+                # 영상 주제 용어를 알려주면 "단리"를 "달리"로 듣는 식의 오류가 줄어든다
+                hotwords=" ".join(vocabulary) if vocabulary else None,
             )
             words: list[Word] = []
             for seg in segments:

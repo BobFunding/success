@@ -58,9 +58,52 @@ class Insert:
     placement: str
     svg_path: str = ""
     png_path: str = ""
+    # side 카드의 화면 위치/크기(px). 0 이면 렌더링 때 기본 위치(오른쪽 가운데)
+    x: int = 0
+    y: int = 0
+    size: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+def place_cards(inserts: list[Insert], text_boxes: list[tuple[float, tuple]], W: int, H: int) -> None:
+    """side 카드를 화면 글자(제목, 자막, 화면 속 정보)를 가리지 않는 자리에 놓는다.
+    큰 카드로 안 가리는 자리가 없으면 카드를 한 단계씩 줄여보고, 끝까지 없으면 가장 덜 가리는 자리를 쓴다."""
+
+    def layouts(scale: float):
+        if W >= H:
+            size = int(min(W * scale, H * 0.9)) // 2 * 2
+            m = int(W * 0.03)
+            # 앞쪽일수록 선호 (화자는 보통 가운데에 있으므로 좌우 가장자리 위주)
+            pos = [(W - size - m, (H - size) // 2), (m, (H - size) // 2),
+                   (W - size - m, m), (m, m), (W - size - m, H - size - m), (m, H - size - m)]
+        else:
+            size = int(W * scale * 1.9) // 2 * 2
+            m = int(H * 0.06)
+            pos = [((W - size) // 2, m), ((W - size) // 2, (H - size) // 2), ((W - size) // 2, H - size - m * 3)]
+        return size, pos
+
+    for ins in inserts:
+        if ins.placement != "side":
+            continue
+        boxes = [b for t, b in text_boxes if ins.start - 0.5 <= t <= ins.end + 0.5]
+
+        def covered(x, y, size):
+            return sum(max(0, min(x + size, b[2]) - max(x, b[0])) * max(0, min(y + size, b[3]) - max(y, b[1]))
+                       for b in boxes)
+
+        chosen = None
+        for scale in (0.42, 0.36, 0.30):
+            size, pos = layouts(scale)
+            free = [p for p in pos if covered(*p, size) == 0]
+            if free:
+                chosen = (free[0], size)
+                break
+        if chosen is None:
+            size, pos = layouts(0.42)
+            chosen = (min(pos, key=lambda p: covered(*p, size)), size)
+        (ins.x, ins.y), ins.size = chosen
 
 
 def plan_inserts(sentences: list[dict], total: float, llm: LLM, per_sec: float,

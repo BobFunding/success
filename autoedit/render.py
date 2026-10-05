@@ -49,7 +49,10 @@ def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict
         dur = end - start
         inputs += ["-loop", "1", "-t", f"{dur + 0.1:.3f}", "-i", png]
         idx = inputs.count("-i") - 1  # 방금 추가한 입력의 번호
-        if ins["placement"] == "side":
+        if ins["placement"] == "side" and ins.get("size"):
+            cw = _even(ins["size"])
+            size, pos = f"{cw}:{cw}", f"{int(ins['x'])}:{int(ins['y'])}"
+        elif ins["placement"] == "side":
             if W >= H:
                 cw = _even(W * 0.42)
                 px, py = W - cw - _even(W * 0.03), (H - cw) // 2
