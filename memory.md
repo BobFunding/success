@@ -63,6 +63,12 @@
 - 시험 결과: 21.6초 → 18.7초, 입력창 타이핑 구간에 자동 줌, 차트처럼 넓은 변화는 전체 화면 유지.
 - 다음: 사용자 실제 영상 2개(목소리를 가져올 예전 영상, 새 녹화) 링크 받으면 → 목소리 추출, 나레이션 배치, 자막, screenfx 적용. 배속 구간을 나레이션 길이에 맞춰 조정하는 기능 필요(`plan["out_to_src"]` 활용).
 
+### 2026-10-06 · 태권월드(taekwonworld.net) 직접 녹화 시험
+- 사용자의 SaaS = 태권월드(태권도장 통합관리). 공개 소개 페이지만 녹화(관리 화면은 로그인 필요 → 데모 계정을 environment secrets 로 받아야 함).
+- Chromium 이 프록시 인증서를 몰라 ERR_CERT_AUTHORITY_INVALID → `certutil -A -t "C,," -n ccr-agent-proxy -i /root/.ccr/agent-proxy-ca.crt` 로 ~/.pki/nssdb 에 프록시 CA 등록(검증을 끄지 않음). 세션이 새로 시작되면 다시 필요할 수 있음.
+- Playwright 는 최신 pip 버전이라 브라우저 번호가 안 맞음 → `executable_path="/opt/pw-browsers/chromium"`.
+- 클릭 줌 개선: 클릭 직후 1초 안에 바뀐 영역(슬라이드·결과 화면)까지 담도록 중심·배율 결정. 배경은 로고 색(#1B2A6B → #E8303A).
+
 ## 결정 사항
 
 - 개인정보는 과하게 가리는 쪽으로 판단합니다. 속도를 위해 OCR 정확도(해상도, 샘플 간격)를 낮추는 변경은 사용자 확인 후에만 합니다.

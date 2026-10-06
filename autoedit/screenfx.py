@@ -154,10 +154,27 @@ def plan_focus(acts: list[FrameActivity], clicks: list[dict], W: int, H: int,
             t = float(c["t"])
             # 클릭 뒤 같은 영역에서 변화(입력 등)가 이어지면 그만큼 줌을 더 유지한다
             end = t + s.hold
+            px, py = c["x"] / W, c["y"] / H
             for a in acts:
-                if t < a.t <= end + 0.5 and a.box and _near(a.box, c["x"] / W, c["y"] / H, 0.18):
+                if t < a.t <= end + 0.5 and a.box and _near(a.box, px, py, 0.18):
                     end = max(end, a.t + s.hold * 0.6)
-            focus.append(Focus(t - s.lead, end, c["x"] / W, c["y"] / H, s.zoom, "click"))
+            # 클릭 직후 1초 안에 바뀐 곳(슬라이드, 팝업, 결과 화면)까지 함께 담는다.
+            # 누른 버튼보다 '누른 결과'가 보여야 하므로. 너무 넓게 바뀌면(페이지 전환) 클릭 위치만 본다
+            u = [px, py, px, py]
+            for a in acts:
+                if t <= a.t <= t + 1.0 and a.box and a.changed < s.big_change:
+                    u = [min(u[0], a.box[0]), min(u[1], a.box[1]), max(u[2], a.box[2]), max(u[3], a.box[3])]
+            span = max(u[2] - u[0], (u[3] - u[1]) * H / W)
+            if span > 0.08:
+                z = min(s.zoom, 0.85 / span)
+                if z >= 1.2:
+                    px, py = (u[0] + u[2]) / 2, (u[1] + u[3]) / 2
+                    focus.append(Focus(t - s.lead, end, px, py, z, "click"))
+                    continue
+                # 결과가 화면 대부분에 걸치면 줌하지 않고 전체를 보여준다
+                focus.append(Focus(t - s.lead, end, 0.5, 0.5, 1.0, "click"))
+                continue
+            focus.append(Focus(t - s.lead, end, px, py, s.zoom, "click"))
     else:
         fps = 1 / (acts[1].t - acts[0].t) if len(acts) > 1 else 30.0
         hits: dict[int, int] = {}  # 줌 구간마다 실제로 변화가 있었던 프레임 수

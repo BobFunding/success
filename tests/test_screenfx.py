@@ -68,3 +68,12 @@ def test_speed_map_skips_idle_frames_only():
 def test_speedup_off():
     acts = _acts(100)
     assert speed_map(acts, [], ScreenFxSettings(speedup=1.0)) == list(range(100))
+
+
+def test_click_focus_includes_what_changed_after_click():
+    # 슬라이드 화살표(오른쪽 끝)를 누르면 가운데 슬라이드가 바뀜 → 화살표가 아니라 슬라이드 쪽을 보여줘야 한다
+    acts = _acts(300, [(62, 80, (0.30, 0.35, 0.68, 0.60), False)])
+    f = plan_focus(acts, [{"t": 2.0, "x": 1375, "y": 573}], 1920, 1080, ScreenFxSettings())
+    assert len(f) == 1
+    assert 0.45 < f[0].cx < 0.55          # 화살표(0.72)보다 슬라이드 쪽
+    assert 1.2 <= f[0].zoom <= ScreenFxSettings().zoom
