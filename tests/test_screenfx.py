@@ -94,4 +94,4 @@ def test_privacy_blur_and_spot_dimming():
     # 디밍: 강조 영역은 거의 그대로, 바깥은 어두워짐
     out = _apply_privacy_and_spots(frame.copy(), 2.5, [], [spot], {})
     assert abs(float(out[120:150, 180:220].mean()) - float(frame[120:150, 180:220].mean())) < 3
-    assert out[0:50, 0:50].mean() < frame[0:50, 0:50].mean() * 0.7
+    assert out[0:50, 0:50].mean() < frame[0:50, 0:50].mean() * 0.8

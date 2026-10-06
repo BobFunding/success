@@ -446,7 +446,7 @@ def _apply_privacy_and_spots(frame, t, blurs, spots, cache):
             alpha, m = a, cache[i]
             break
     if m is not None:
-        dim = 1 - 0.45 * alpha * (1 - m)          # 영역 밖을 최대 45% 어둡게, 경계는 부드럽게
+        dim = 1 - 0.30 * alpha * (1 - m)          # 영역 밖을 최대 30% 어둡게 (너무 어두우면 흰 화면이 탁해 보임), 경계는 부드럽게
         frame = (frame.astype(np.float32) * dim[..., None]).astype(np.uint8)
     return frame
 
