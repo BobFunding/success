@@ -31,6 +31,8 @@ autoedit/
   imagegen.py        (gpt 엔진, 기본값) GPT 이미지 병렬 생성 → 손그림 카드/설명 화면으로 합성, 라벨은 직접 그림
   translate.py       번역 자막 (외국어 문장 → 한국어, translations.json)
   render.py          최종 ffmpeg 합성 (모자이크·삐-·일러스트·스티커·ASS 자막)
+  screenfx.py        화면 녹화 편집 (Screen Studio 스타일: 배경 프레임·자동 줌·클릭 효과·대기 구간 빨리 감기).
+                     pipeline 과 완전히 별개 — 다른 모듈을 고치거나 부르지 않음
   llm.py             Claude 호출 래퍼 (구조화 출력, 서버측 fallback, 키 없을 때 비활성화)
   ffmpeg_utils.py    ffmpeg 경로 탐색, probe, NVENC 감지, 필터 스크립트 인자
 tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·API 키 없이 실행)
@@ -60,6 +62,8 @@ tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·A
 ## 알려진 함정
 
 - 언어가 섞인 영상(한국어+영어 인터뷰)에서 언어를 `ko` 로 고정하면 영어 구간을 통째로 건너뛰고, `multilingual=True` 는 영어를 한국어로 번역해 지어냅니다. `language="ko+en"` 으로 언어마다 받아 적고 구간별로 avg_logprob 가 높은 쪽을 고릅니다(`transcribe.merge_language_passes`).
+- 화면 녹화에서 커서와 글자 입력은 크기로 구분할 수 없습니다(글자가 커서보다 작음). 속도로도 안 됩니다(느린 커서). `screenfx.analyze` 는 '이번 프레임 차이와 다음 프레임 차이가 겹치는 작은 영역 = 커서'로 보고 지웁니다.
+- 카메라 스프링은 목표가 화면 밖이면 속도가 쌓였다가 풀릴 때 튑니다. 목표를 화면 안으로 당기고, 막힌 방향 속도는 버립니다(`screenfx.camera_path`).
 - 손으로 든 카메라는 매 프레임 화면이 조금씩 흔들려서 OCR 재사용 판정이 거의 안 걸립니다(82초 4K 영상에 OCR 81회, 552초, CPU).
 - GPU 없이 4K 60fps 를 x264 `medium` 으로 뽑으면 매우 느립니다. `x264_preset="veryfast"` 면 82초 영상에 컷 228초, 최종 180초(4코어).
 - faster-whisper에 파일 경로를 넘기면 최신 PyAV와 충돌합니다(`metadata_errors` 오류). wav를 numpy 배열로 읽어서 넘기세요.
