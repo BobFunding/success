@@ -337,12 +337,20 @@ def _round_mask(w: int, h: int, r: int) -> np.ndarray:
 
 
 def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: list[dict] | None = None,
-           log=print) -> dict:
-    """영상을 편집해 out 에 쓴다. 돌려주는 값: 편집 계획(줌 구간, 배속 결과) — 나레이션 정렬 등에 쓰임."""
+           log=print, blurs: list[dict] | None = None, spots: list[dict] | None = None,
+           out_fps: float | None = None) -> dict:
+    """영상을 편집해 out 에 쓴다. 돌려주는 값: 편집 계획(줌 구간, 배속 결과) — 나레이션 정렬 등에 쓰임.
+
+    blurs: 개인정보 흐림 [{start, end, x, y, w, h}] (원본 픽셀) — 확대돼도 같이 따라가도록 원본에 먼저 적용
+    spots: 디밍 [{start, end, x, y, w, h}] — 이 영역만 밝게 두고 나머지를 어둡게 (누를 곳 강조)
+    out_fps: 출력 프레임 수 (예: 원본 30 → 60). 카메라 움직임은 출력 프레임마다 계산해서 더 부드러워짐
+    """
     import cv2
 
     s = s or ScreenFxSettings()
     clicks = clicks or []
+    blurs = blurs or []
+    spots = spots or []
     info = probe(video)
     fps, SW, SH = info.fps, info.width, info.height
     W, H = s.out_size or (SW, SH)
@@ -370,9 +378,13 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
     sh = cv2.GaussianBlur(sh, (0, 0), W * 0.012)[..., None] * s.shadow
     base = bg * (1 - sh)
 
+    sub = max(1, round((out_fps or fps) / fps))   # 원본 한 프레임당 출력 프레임 수
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
-           "-s", f"{W}x{H}", "-r", f"{fps:.5f}", "-i", "-", "-c:v", "libx264", "-preset", s.x264_preset,
-           "-crf", str(s.crf), "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)]
+           "-s", f"{W}x{H}", "-r", f"{fps * sub:.5f}", "-i", "-", "-c:v", "libx264", "-preset", s.x264_preset,
+           "-crf", str(s.crf), "-pix_fmt", "yuv420p", "-g", str(int(round(fps * sub * 2))),
+           "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+           "-movflags", "+faststart", str(out)]
+    spot_masks: dict[int, np.ndarray] = {}
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     cap = cv2.VideoCapture(str(video))
     want = iter(frames)
@@ -387,28 +399,15 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
             if idx != nxt:
                 idx += 1
                 continue
-            cx, cy, z = path[idx]
-            t = idx / fps
-            # 확대: 원본에서 (cx, cy) 중심으로 1/z 크기 영역을 잘라 창 크기로 키움
-            vw, vh = SW / z, SH / z
-            x0, y0 = cx * SW - vw / 2, cy * SH - vh / 2
-            M = np.array([[cw / vw, 0, -x0 * cw / vw], [0, ch / vh, -y0 * ch / vh]], np.float32)
-            view = cv2.warpAffine(frame, M, (cw, ch), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
-            for ct, px, py in click_ts:
-                age = t - ct
-                if 0 <= age < 0.55:
-                    # 클릭 파동: 커지면서 옅어지는 원 두 겹
-                    sx, sy = (px * SW - x0) * cw / vw, (py * SH - y0) * ch / vh
-                    p = age / 0.55
-                    rad = int((10 + 40 * p) * z * cw / SW)
-                    ov = view.copy()
-                    cv2.circle(ov, (int(sx), int(sy)), rad, (255, 255, 255), max(2, int(4 * cw / SW * z)), cv2.LINE_AA)
-                    cv2.circle(ov, (int(sx), int(sy)), max(2, rad // 3), (246, 108, 124), -1, cv2.LINE_AA)
-                    view = cv2.addWeighted(ov, 0.75 * (1 - p), view, 1 - 0.75 * (1 - p), 0)
-            canvas = base.copy()
-            region = canvas[oy:oy + ch, ox:ox + cw]
-            canvas[oy:oy + ch, ox:ox + cw] = region * (1 - mask) + view.astype(np.float32) * mask
-            proc.stdin.write(canvas.astype(np.uint8).tobytes())
+            frame = _apply_privacy_and_spots(frame, idx / fps, blurs, spots, spot_masks)
+            for j in range(sub):
+                # 출력 프레임 사이 카메라 위치는 앞뒤 원본 프레임 사이를 보간 (60fps 출력에서 더 부드럽게)
+                f2 = j / sub
+                nx = min(idx + 1, len(path) - 1)
+                cx, cy, z = path[idx] * (1 - f2) + path[nx] * f2
+                t = (idx + f2) / fps
+                proc.stdin.write(_compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts)
+                                 .tobytes())
             idx += 1
             nxt = next(want, None)
     finally:
@@ -418,10 +417,73 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
     if proc.returncode != 0:
         raise RuntimeError("ffmpeg 인코딩 실패")
     plan = {"settings": asdict(s), "focus": [asdict(f) for f in focus],
-            "frames_in": len(acts), "frames_out": len(frames), "fps": fps,
+            "frames_in": len(acts), "frames_out": len(frames) * sub, "fps": fps * sub,
             # 출력 시각 → 원본 시각 (나레이션·자막을 원본 기준으로 맞출 때 사용)
             "out_to_src": [round(i / fps, 3) for i in frames[:: max(1, int(fps // 10))]]}
     return plan
+
+
+def _apply_privacy_and_spots(frame, t, blurs, spots, cache):
+    """원본 프레임에 개인정보 흐림과 디밍을 먼저 적용한다 (그래야 확대·이동해도 정확히 따라감)."""
+    import cv2
+    for b in blurs:
+        if b["start"] <= t <= b["end"]:
+            x, y, w, h = int(b["x"]), int(b["y"]), int(b["w"]), int(b["h"])
+            roi = frame[y:y + h, x:x + w]
+            if roi.size:
+                # 강하게 흐린 뒤 살짝 밝혀서 '가려진 칸'처럼 자연스럽게 (모자이크보다 덜 거슬림)
+                k = max(3, (h // 2) | 1)
+                frame[y:y + h, x:x + w] = cv2.addWeighted(cv2.GaussianBlur(roi, (k * 2 + 1, k * 2 + 1), 0), 0.85,
+                                                          np.full_like(roi, 245), 0.15, 0)
+    alpha = 0.0
+    m = None
+    for i, sp in enumerate(spots):
+        fade = 0.3
+        a = min(1.0, (t - sp["start"]) / fade, (sp["end"] - t) / fade)
+        if a > 0:
+            if i not in cache:
+                cache[i] = _spot_mask(frame.shape[1], frame.shape[0], sp)
+            alpha, m = a, cache[i]
+            break
+    if m is not None:
+        dim = 1 - 0.45 * alpha * (1 - m)          # 영역 밖을 최대 45% 어둡게, 경계는 부드럽게
+        frame = (frame.astype(np.float32) * dim[..., None]).astype(np.uint8)
+    return frame
+
+
+def _spot_mask(w, h, sp):
+    import cv2
+    pad = 14
+    m = np.zeros((h, w), np.float32)
+    x1, y1 = max(0, int(sp["x"]) - pad), max(0, int(sp["y"]) - pad)
+    x2, y2 = min(w, int(sp["x"] + sp["w"]) + pad), min(h, int(sp["y"] + sp["h"]) + pad)
+    cv2.rectangle(m, (x1, y1), (x2, y2), 1.0, -1)
+    return cv2.GaussianBlur(m, (0, 0), 10)
+
+
+def _compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts):
+    """확대·클릭 파동·배경 합성 → 출력 한 프레임."""
+    import cv2
+    # 확대: 원본에서 (cx, cy) 중심으로 1/z 크기 영역을 잘라 창 크기로 키움
+    vw, vh = SW / z, SH / z
+    x0, y0 = cx * SW - vw / 2, cy * SH - vh / 2
+    M = np.array([[cw / vw, 0, -x0 * cw / vw], [0, ch / vh, -y0 * ch / vh]], np.float32)
+    view = cv2.warpAffine(frame, M, (cw, ch), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    for ct, px, py in click_ts:
+        age = t - ct
+        if 0 <= age < 0.55:
+            # 클릭 파동: 커지면서 옅어지는 원 두 겹
+            sx, sy = (px * SW - x0) * cw / vw, (py * SH - y0) * ch / vh
+            p = age / 0.55
+            rad = int((10 + 40 * p) * z * cw / SW)
+            ov = view.copy()
+            cv2.circle(ov, (int(sx), int(sy)), rad, (255, 255, 255), max(2, int(4 * cw / SW * z)), cv2.LINE_AA)
+            cv2.circle(ov, (int(sx), int(sy)), max(2, rad // 3), (36, 20, 204), -1, cv2.LINE_AA)  # 로고 빨강 #CC1424
+            view = cv2.addWeighted(ov, 0.75 * (1 - p), view, 1 - 0.75 * (1 - p), 0)
+    canvas = base.copy()
+    region = canvas[oy:oy + ch, ox:ox + cw]
+    canvas[oy:oy + ch, ox:ox + cw] = region * (1 - mask) + view.astype(np.float32) * mask
+    return canvas.astype(np.uint8)
 
 
 def main() -> None:

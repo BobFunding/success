@@ -77,3 +77,21 @@ def test_click_focus_includes_what_changed_after_click():
     assert len(f) == 1
     assert 0.45 < f[0].cx < 0.55          # 화살표(0.72)보다 슬라이드 쪽
     assert 1.2 <= f[0].zoom <= ScreenFxSettings().zoom
+
+
+def test_privacy_blur_and_spot_dimming():
+    from autoedit.screenfx import _apply_privacy_and_spots
+    rng = np.random.default_rng(0)
+    frame = rng.integers(0, 255, (200, 300, 3), dtype=np.uint8)
+    blur = {"start": 1.0, "end": 2.0, "x": 20, "y": 20, "w": 80, "h": 40}
+    spot = {"start": 0.0, "end": 5.0, "x": 150, "y": 100, "w": 100, "h": 60}
+    # 흐림 시간 밖이면 그 칸은 그대로
+    out = _apply_privacy_and_spots(frame.copy(), 0.5, [blur], [], {})
+    assert np.array_equal(out[20:60, 20:100], frame[20:60, 20:100])
+    # 흐림 시간 안이면 칸 안의 값이 뭉개져서(분산 감소) 원래 값을 알아볼 수 없음
+    out = _apply_privacy_and_spots(frame.copy(), 1.5, [blur], [], {})
+    assert out[20:60, 20:100].std() < frame[20:60, 20:100].std() * 0.5
+    # 디밍: 강조 영역은 거의 그대로, 바깥은 어두워짐
+    out = _apply_privacy_and_spots(frame.copy(), 2.5, [], [spot], {})
+    assert abs(float(out[120:150, 180:220].mean()) - float(frame[120:150, 180:220].mean())) < 3
+    assert out[0:50, 0:50].mean() < frame[0:50, 0:50].mean() * 0.7
