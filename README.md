@@ -9,6 +9,9 @@
 
 ## 처음 한 번만
 
+**새 컴퓨터에서는 `setup.bat` 을 더블클릭하세요.** Python 3.12, FFmpeg, 가상환경(`.venv`), PyTorch(그래픽카드가 있으면 GPU 버전), 필요한 패키지를 자동으로 설치하고 `.env` 파일을 만듭니다. 10~30분 걸릴 수 있고, 끝나면 `web.bat` 으로 실행합니다.
+`.venv` 는 컴퓨터마다 따로 만들어야 해서 GitHub 에 올라가 있지 않습니다. 그래서 GitHub 에서 받은 폴더는 `setup.bat` 없이는 `web.bat` 이 동작하지 않습니다.
+
 1. `.env.example` 파일을 복사해 `.env` 로 이름을 바꾸고 API 키를 넣습니다.
    ```
    ANTHROPIC_API_KEY=sk-ant-...   # 컷 판단, 일러스트 기획, 개인정보 판단

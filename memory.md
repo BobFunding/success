@@ -85,6 +85,12 @@
 - 실제 인증 성공·가입 완료 화면은 아직 없음(요청 차단). 실제 가입 때 해당 장면만 교체 필요.
 - 합성 시간: 본편 screenfx(60fps, 1440p) + 최종 인코딩 약 15분(4코어).
 
+### 2026-10-07 · 새 컴퓨터 설치용 setup.bat
+- 사용자가 다른 PC 에서 GitHub 로 받은 폴더로 web.bat 실행 → 실패. 원인: `.venv` 는 커밋되지 않음, README 에 설치 절차 누락.
+- `setup.bat` 추가(winget 으로 Python 3.12·FFmpeg, .venv, nvidia-smi 유무로 torch cu124/cpu, requirements, .env 복사). web.bat 은 .venv 없으면 setup.bat 안내.
+- 배치 파일은 CRLF. if ( ) 블록 안 echo 의 괄호는 ^( ^) 로 이스케이프. **Windows 실기 검증은 아직 안 함.**
+- main 브랜치에는 PR #1 내용이 아직 없음 → 사용자가 main 을 받으면 새 기능·setup.bat 이 없음. PR 병합 필요.
+
 ## 결정 사항
 
 - 개인정보는 과하게 가리는 쪽으로 판단합니다. 속도를 위해 OCR 정확도(해상도, 샘플 간격)를 낮추는 변경은 사용자 확인 후에만 합니다.
