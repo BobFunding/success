@@ -1,0 +1,12 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>푸른숲 도서관</title><link rel="stylesheet" href="style.css"></head>
+<body><header><a class="logo" href="index.html">푸른숲 도서관</a>
+<nav><a href="search.html">자료 검색</a><a href="search.html">이용 안내</a><a href="join.html">회원가입</a><a href="login.html">사서 로그인</a></nav></header>
+<section class="hero"><div><h1>책과 가까워지는 곳</h1><p>회원이 되면 책 대출, 열람실 예약,<br>새 책 알림을 받을 수 있어요.</p>
+<a class="btn primary" href="join.html">회원가입 하기</a> <a class="btn ghost" href="search.html">둘러보기</a></div><div class="art">📚</div></section>
+<div id="notice" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:32px;width:420px"><h2 style="margin:0 0 12px">휴관 안내</h2><p>10월 15일은 시설 점검으로 쉽니다.</p>
+  <div style="display:flex;justify-content:space-between;margin-top:24px"><button type="button" class="btn ghost" onclick="localStorage.setItem('hideNotice',Date.now());notice.remove()">오늘 하루 보지 않기</button>
+  <button type="button" class="btn primary" onclick="notice.remove()">닫기</button></div></div></div>
+<div id="ch-plugin" style="position:fixed;right:24px;bottom:24px;width:64px;height:64px;border-radius:50%;background:#2a5bd7;color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px">💬</div>
+<script>if(!localStorage.getItem('hideNotice'))notice.style.display='flex'</script>
+</body></html>

@@ -26,6 +26,10 @@ def main() -> None:
     p.add_argument("--engine", choices=["gpt", "claude-svg"], default=Settings.illustration_engine,
                    help="일러스트 생성 방식: gpt(GPT 이미지 병렬 생성) / claude-svg")
     p.add_argument("--terms", default="", help="주제 용어 힌트(쉼표 구분): 받아쓰기 정확도 향상. 예: 복리,단리")
+    p.add_argument("--no-correct", action="store_true", help="Claude 받아쓰기 교정 끄기")
+    p.add_argument("--lang", default=Settings.language, help="받아쓰기 언어 (ko, en, ko+en=섞인 영상)")
+    p.add_argument("--translate", default="", help="번역 자막 언어 (예: ko). 외국어 인터뷰에 한국어 자막")
+    p.add_argument("--x264-preset", default=Settings.x264_preset, help="GPU 없을 때 인코딩 속도 (veryfast 등)")
     p.add_argument("--whisper", default=Settings.whisper_model, help="Whisper 모델 (large-v3, medium, small)")
     a = p.parse_args()
 
@@ -44,7 +48,11 @@ def main() -> None:
         seconds_per_illustration=a.illust_every,
         privacy_allowlist=[x for x in a.allow.split(",") if x.strip()],
         whisper_model=a.whisper,
+        language=a.lang,
+        subtitle_translate=a.translate,
+        x264_preset=a.x264_preset,
         vocabulary=[x.strip() for x in a.terms.split(",") if x.strip()],
+        transcript_correction=not a.no_correct,
         illustration_engine=a.engine,
     )
     run(a.video, s)

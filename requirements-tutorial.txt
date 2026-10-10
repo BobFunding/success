@@ -1,0 +1,12 @@
+# 튜토리얼 메이커에 필요한 것 (setup.bat / setup.sh 가 설치)
+playwright
+edge-tts
+pyyaml
+numpy
+pillow
+opencv-python-headless
+resvg-py
+certifi
+# 품질 검사(발음 검사·개인정보 최종 검사). 없으면 그 검사만 건너뜀. torch 는 setup 이 먼저 설치
+faster-whisper
+easyocr
