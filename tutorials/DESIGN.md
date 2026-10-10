@@ -3,7 +3,7 @@
 웹사이트 사용법 영상을 **사람이나 AI 도움 없이** 만드는 프로그램의 설계입니다.
 2026-10-10 사용자와 확정했습니다. 아직 구현 전입니다. 구현은 새 세션에서 이 문서를 기준으로 진행합니다.
 
-- 화면 시안(클릭해 볼 수 있는 모형, 실제 기능 없음): https://claude.ai/artifact/PhwbW2M9zuAyCEgFzqFEm2
+- 화면 시안(클릭해 볼 수 있는 모형, 실제 기능 없음): https://claude.ai/artifact/PhwbW2M9zuAyCEgFzqFEm2 , 저장소 사본 `tutorials/mock/tutorial-maker-mock.html`
 - 함께 읽을 문서: `tutorials/RULES.md`(1편 제작 규칙), `tutorials/ep1/`(1편 녹화·편집 코드), `AGENTS.md`
 
 ---
