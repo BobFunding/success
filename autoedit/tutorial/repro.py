@@ -26,7 +26,9 @@ from .compose import Composer
 
 ROOT = Path(__file__).resolve().parents[2]
 EP1 = ROOT / "tutorials" / "ep1"
-TOL_T = 0.25            # 장면 안 박자 허용 오차(초): 장면마다 그 문장 시작부터 잰 시각
+TOL_T = 0.25            # 장면 안 박자 허용 오차(초)의 최소값: 장면마다 그 문장 시작부터 잰 시각
+# 실제 허용치 = max(TOL_T, 원래 코드끼리의 흔들림). 원래 코드로 프로그램 녹화 앞뒤에 한 번씩 찍어 잰다
+# (2026-10-10 사용자 결정: 원래 코드끼리도 F3·F8 이 0.26초까지 흔들려 고정 0.25초는 컴퓨터에 따라 너무 좁음)
 TOL_XY = 1.5            # 클릭 위치 허용 오차(화면 픽셀, 2880x1620 기준)
 TOL_LEN = 0.3           # 길이 허용 오차(초)
 
@@ -110,7 +112,7 @@ def _per_scene(log: dict) -> list[list[tuple]]:
     return out
 
 
-def compare_logs(a: dict, b: dict) -> dict:
+def compare_logs(a: dict, b: dict, tol_t: float = TOL_T) -> dict:
     """녹화 기록 비교.
     - 위치: 클릭·밝게 하기 자리가 같아야 한다(0px 에 가깝게).
     - 박자: 장면마다 그 문장이 시작된 때부터 잰 시각이 같아야 한다(허용 TOL_T).
@@ -129,7 +131,8 @@ def compare_logs(a: dict, b: dict) -> dict:
     res.update(click_xy=max(dxy), spot_box=max(dbox), scene_events=same_count, scene_t=round(max(rel), 3),
                drift=round(max(drift), 3))
     res["ok"] = (res["clicks"][0] == res["clicks"][1] and res["spots"][0] == res["spots"][1] and res["lines"][0]
-                 and same_count and res["click_xy"] <= TOL_XY and res["spot_box"] <= TOL_XY and res["scene_t"] <= TOL_T)
+                 and same_count and res["click_xy"] <= TOL_XY and res["spot_box"] <= TOL_XY and res["scene_t"] <= tol_t)
+    res["tol_t"] = round(tol_t, 3)
     return res
 
 
@@ -178,8 +181,15 @@ def compare_outputs(a: Path, b: Path, base: str, exact: bool, drift: float = 0.0
 
 def report(work: Path, sc) -> bool:
     base = sc.file_name
-    rec = compare_logs(json.loads((work / "base" / "log_rec.json").read_text(encoding="utf-8")),
-                       json.loads((work / "engine" / "log_rec.json").read_text(encoding="utf-8")))
+    base_log = json.loads((work / "base" / "log_rec.json").read_text(encoding="utf-8"))
+    pre = work / "base" / "log_rec_pre.json"
+    noise = None
+    if pre.exists():                                     # 원래 코드끼리의 흔들림 = 이번 허용치
+        noise = compare_logs(json.loads(pre.read_text(encoding="utf-8")), base_log, tol_t=99)
+    tol = max(TOL_T, noise["scene_t"]) if noise else TOL_T
+    rec = compare_logs(base_log, json.loads((work / "engine" / "log_rec.json").read_text(encoding="utf-8")), tol_t=tol)
+    if noise:
+        rec["원래코드끼리"] = {k: noise[k] for k in ("scene_t", "click_xy", "spot_box", "drift")}
     same = compare_outputs(work / "base", work / "same", base, exact=True)
     eng = compare_outputs(work / "base", work / "engine", base, exact=False, drift=rec["drift"])
     ok = rec["ok"] and same["ok"] and eng["ok"]
@@ -198,7 +208,13 @@ def main(work: Path, only=None) -> bool:
     if "프로그램" in stages:            # 목소리를 먼저 만들어 기준과 함께 쓴다
         for k in ("cap.mkv.key",):         # 지난 녹화를 다시 쓰면 '같은 때' 찍은 것이 아니게 됨 → 매번 새로 녹화
             (work / "engine" / k).unlink(missing_ok=True)
-        stage_engine(work, sc, ("목소리", "리허설", "녹화"))
+        stage_engine(work, sc, ("목소리", "리허설"))
+    (work / "base" / "log_rec_pre.json").unlink(missing_ok=True) if "기준" in stages else None
+    if "기준" in stages and "프로그램" in stages:      # 원래 코드 → 프로그램 → 원래 코드 순서로 연달아 찍는다
+        stage_base(work, sc)
+        shutil.copy(work / "base" / "log_rec.json", work / "base" / "log_rec_pre.json")
+    if "프로그램" in stages:
+        stage_engine(work, sc, ("녹화",))
     if "기준" in stages:
         stage_base(work, sc)
     if "프로그램" in stages:

@@ -139,3 +139,17 @@ def test_server_export_needs_destination(srv):
     assert d["ok"] is False and "올릴 곳" in d["error"]
     pl = SV.platforms_view()
     assert len(pl) == 14 and {p["key"] for p in pl if p["default"]} == {"youtube", "web"}
+
+
+def test_repro_tolerance_follows_original_code_noise():
+    """허용치 = max(0.25초, 원래 코드끼리의 흔들림). 위치는 늘 0px 이어야 한다."""
+    from autoedit.tutorial.repro import compare_logs
+    def log(d):
+        return {"marks": {"body_start": 0.0}, "lines": [{"key": "A", "t": 1.0}],
+                "clicks": [{"t": 2.0 + d, "x": 10, "y": 10}],
+                "spots": [{"start": 1.5, "end": 2.4, "x": 0, "y": 0, "w": 50, "h": 50}]}
+    assert not compare_logs(log(0), log(0.3))["ok"]                       # 고정 0.25초면 실패
+    noise = compare_logs(log(0), log(0.32), tol_t=99)["scene_t"]          # 원래 코드끼리 0.32초 흔들림
+    r = compare_logs(log(0), log(0.3), tol_t=max(0.25, noise))
+    assert r["ok"] and r["tol_t"] == 0.32
+    assert not compare_logs(log(0), log(0.4), tol_t=max(0.25, noise))["ok"]
