@@ -18,6 +18,9 @@ else
 fi
 [ -x .venv/bin/python ] || "$PY" -m venv .venv
 .venv/bin/python -m pip install --upgrade pip >/dev/null
+# 품질 검사(글자 인식)용 torch: CPU 판 (Mac 은 기본 판)
+if [ "$(uname)" = "Darwin" ]; then .venv/bin/python -m pip install torch torchvision; \
+else .venv/bin/python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu; fi
 .venv/bin/python -m pip install -r requirements-tutorial.txt
 .venv/bin/python -m playwright install chromium
 [ "$(uname)" = "Darwin" ] || .venv/bin/python -m playwright install-deps chromium || true

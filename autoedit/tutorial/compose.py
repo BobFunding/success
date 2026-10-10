@@ -194,7 +194,8 @@ class Composer:
             kp, k = self._keys.pop(f)
             kp.write_text(k, encoding="utf-8")
 
-    def build(self, fast: bool = False, on_stage=None) -> dict:
+    def build(self, fast: bool = False, on_stage=None, preview: bool = False) -> dict:
+        """preview: 빠른 미리보기 — 본편을 960x540 30fps 로 가볍게 만들고 저화질로 합친다(녹화·목소리·자막은 최종과 같음)."""
         stage = on_stage or (lambda n: None)
         self._keys = {}
         work, sc, DUR, TXT = self.work, self.sc, self.DUR, self.TXT
@@ -209,16 +210,18 @@ class Composer:
         stage("화면 연출")
         zoom = (self.rules["확대"], self.rules["최대확대"])
         cap_key = [(work / "cap.mkv").stat().st_mtime if (work / "cap.mkv").exists() else 0, self.OFF, zoom, self.BG]
-        if not self._fresh(work / "body.mp4", cap_key):
+        body = work / ("body_preview.mp4" if preview else "body.mp4")
+        bw, bh, bfps = (960, 540, 30) if preview else (W, H, FPS)
+        if not self._fresh(body, cap_key):
             run("-ss", f"{TRIM0:.3f}", "-to", f"{TRIM1:.3f}", "-i", str(work / "cap.mkv"),
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p", "-an", str(work / "body_src.mp4"))
             clicks = [dict(c, t=round(tb(c["t"]), 3)) for c in self.rec["clicks"]]
             spots = [dict(s, start=tb(s["start"]), end=tb(s["end"])) for s in self.rec["spots"]]
-            s = ScreenFxSettings(background=self.BG, zoom=zoom[0], max_zoom=zoom[1], speedup=1.0, out_size=(W, H),
-                                 crf=16, x264_preset="medium", padding=0.06)
-            plan = render(work / "body_src.mp4", work / "body.mp4", s, clicks=clicks, spots=spots, out_fps=FPS)
+            s = ScreenFxSettings(background=self.BG, zoom=zoom[0], max_zoom=zoom[1], speedup=1.0, out_size=(bw, bh),
+                                 crf=28 if preview else 16, x264_preset="veryfast" if preview else "medium", padding=0.06)
+            plan = render(work / "body_src.mp4", body, s, clicks=clicks, spots=spots, out_fps=bfps)
             self.say(f"[편집] 본편 확대 {len(plan['focus'])}곳")
-            self._done(work / "body.mp4")
+            self._done(body)
 
         # 2) 인트로·아웃트로 카드
         stage("인트로·아웃트로·자막")
@@ -297,8 +300,18 @@ class Composer:
         build_track([(t, self.NAR[k][1]) for k, t in placed], TOTAL, work / "narration.wav")
 
         # 5) 최종 합성
+        if preview:
+            final = work / f"{base}_preview.mp4"
+            run("-i", str(work / "intro.mp4"), "-i", str(body), "-i", str(work / "outro.mp4"), "-i", str(work / "narration.wav"),
+                "-filter_complex", "[0:v]scale=960:540,fps=30[i];[1:v]fps=30[b];[2:v]scale=960:540,fps=30[o];"
+                f"[i][b][o]concat=n=3:v=1:a=0,ass=filename='{ff_path(ass_path)}':fontsdir='{ff_path(FONTS)}'[v]",
+                "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-t", f"{TOTAL:.3f}", str(final))
+            self.say(f"[편집] 빠른 미리보기: {TOTAL:.1f}s")
+            return {"intro": INTRO_LEN, "body": BODY_LEN, "outro": OUTRO_LEN, "total": TOTAL, "final": str(final),
+                    "files": [str(final)], "chapters": [], "preview": True}
         final = work / f"{base}_1440p60.mp4"
-        run("-i", str(work / "intro.mp4"), "-i", str(work / "body.mp4"), "-i", str(work / "outro.mp4"),
+        run("-i", str(work / "intro.mp4"), "-i", str(body), "-i", str(work / "outro.mp4"),
             "-i", str(work / "narration.wav"),
             "-filter_complex", f"[0:v][1:v][2:v]concat=n=3:v=1:a=0,fps={FPS},ass=filename='{ff_path(ass_path)}':fontsdir='{ff_path(FONTS)}'[v]",
             "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p",

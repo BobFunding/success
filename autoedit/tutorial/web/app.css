@@ -213,3 +213,4 @@ input[type=number]{font:inherit;color:var(--fg);background:var(--bg);border:1px 
 .stepname{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:4px 12px;min-width:120px}
 
 [hidden]{display:none!important}
+td:nth-child(3){white-space:nowrap}

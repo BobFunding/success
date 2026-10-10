@@ -39,6 +39,7 @@ def human(demo):
         for ch in t:
             demo.keyboard.type(ch); time.sleep(0.06)
     time.sleep(0.8)
+    click(demo.get_by_role("button", name="닫기"))           # 공지 팝업 닫기(장면에서 빠져야 함)
     click(demo.get_by_role("link", name="회원가입 하기")); demo.wait_for_url("**/join.html"); time.sleep(0.4)
     click(demo.locator("#name")); typ("홍길동")
     click(demo.locator("#email")); typ("reader@example.com")
@@ -87,16 +88,21 @@ try:
         pg.wait_for_function("document.querySelector('#aud') && document.querySelector('#aud').src.includes('preview')", timeout=60000)
         shot(pg, "3_선택")
         t0 = time.time()
-        pg.click("#next")
+        pg.click("#quick")                                   # 빠른 미리보기 먼저
         pg.wait_for_selector("text=남았어요", timeout=120000)
         time.sleep(3)
         shot(pg, "4_만들기")
+        pg.wait_for_selector("#final", timeout=3600000)
+        print(f"빠른 미리보기 {time.time() - t0:.0f}초")
+        shot(pg, "4a_미리보기")
+        t0 = time.time()
+        pg.click("#final")                                   # 녹화를 다시 쓰는 최종본
         pg.wait_for_selector("#next:not([disabled])", timeout=3600000)
-        print(f"만들기 {time.time() - t0:.0f}초")
+        print(f"최종본 {time.time() - t0:.0f}초")
         shot(pg, "4b_다만듦")
         pg.click("#next")
         pg.wait_for_selector("video")
-        pg.wait_for_function("document.querySelector('video').readyState >= 1", timeout=30000)
+        time.sleep(1)                     # 검사용 Chromium 은 H.264 를 못 틀어 표지만 보임(사용자 브라우저는 재생)
         shot(pg, "5_결과")
         # 휴대폰 폭
         pg.set_viewport_size({"width": 390, "height": 844}); time.sleep(0.4)

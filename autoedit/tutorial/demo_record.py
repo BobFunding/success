@@ -99,6 +99,7 @@ RECORDER_JS = r"""(() => {
   }, true);
 })()"""
 
+POPUP_CLOSE = re.compile(r"오늘\s*(하루)?\s*(동안)?\s*(보지|열지)\s*않기|다시\s*보지\s*않기|^(닫기|close|×|✕|x)$", re.I)
 PRIVATE = re.compile(r"이름|성명|성\b|name|전화|휴대|phone|mobile|tel|생년|생일|birth|dob|주소|address|이메일|e-?mail|인증번호|성별|gender|sex", re.I)
 
 
@@ -162,6 +163,8 @@ def clean_events(evs: list[dict], navs: list[tuple[float, str]]) -> list[dict]:
                 continue                                     # 입력칸 누르기는 입력에 합침
             if e["tag"] == "select" or (e["tag"] == "input" and e["type"] in ("checkbox", "radio")):
                 continue                                     # change 이벤트로 받음
+            if POPUP_CLOSE.search((e.get("text") or e.get("aria") or "").strip()):
+                continue                                     # 공지 팝업 닫기: 녹화 때 프로그램이 알아서 닫는다
             if e.get("forCheck"):
                 continue                                     # 체크 칸 글자 누르기 = 체크(change 로 받음)
             if e["option"] >= 0 and out and out[-1]["action"] == "목록열기":

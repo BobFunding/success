@@ -149,10 +149,12 @@ def project_view(path: Path) -> dict:
     except S.ScenarioError as e:
         warn, err = [], str(e)
     choices = json.loads((w / "choices.json").read_text(encoding="utf-8")) if (w / "choices.json").exists() else {}
+    pron = json.loads((w / "pronunciation.json").read_text(encoding="utf-8")) if (w / "pronunciation.json").exists() else None
+    qa_res = json.loads((w / "qa.json").read_text(encoding="utf-8")) if (w / "qa.json").exists() else None
     vids = sorted(w.glob("*_1440p60.mp4"))
     files = [str(f) for pat in ("*_1440p60.mp4", "*_1080p30.mp4", "*.srt", "챕터.txt") for f in sorted(w.glob(pat))]
     chap = (w / "챕터.txt").read_text(encoding="utf-8").splitlines() if (w / "챕터.txt").exists() else []
-    return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
+    return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
             "choices": choices, "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
 
 
@@ -203,22 +205,24 @@ def job_demo(job: Job, url: str, topic: str, brand: str, tone: str, next_topic: 
 
 
 def job_rehearse(job: Job, path: Path, ch: dict):
-    from . import maker
+    from . import maker, qa
     sc = scenario_with_choices(path, ch)
     w = work_dir(path)
     job.stage("목소리 만들기")
     nar = maker.narrate(sc, w, job.log)
+    job.stage("발음 검사")
+    qa.pronunciation(sc, nar, w, log=job.log)
     job.stage("리허설")
     maker.rehearse(sc, w, {k: v[2] for k, v in nar.items()}, job.log)
     return {"ok": True}
 
 
-def job_make(job: Job, path: Path, ch: dict):
+def job_make(job: Job, path: Path, ch: dict, preview: bool = False):
     from . import maker
     sc = scenario_with_choices(path, ch)
     w = work_dir(path)
     (w / "choices.json").write_text(json.dumps(ch, ensure_ascii=False), encoding="utf-8")
-    return maker.make(sc, w, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True))
+    return maker.make(sc, w, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True), preview=preview)
 
 
 def voice_preview(path: Path, voice_name: str, speed: int) -> str:
@@ -366,7 +370,8 @@ class Handler(BaseHTTPRequestHandler):
                 ok = JOB.start("rehearse", lambda j: job_rehearse(j, Path(b["path"]), b.get("choices", {})), path=b["path"])
                 return self.json({"ok": ok})
             if u.path == "/api/make":
-                ok = JOB.start("make", lambda j: job_make(j, Path(b["path"]), b.get("choices", {})), path=b["path"])
+                pv = bool(b.get("preview"))
+                ok = JOB.start("make", lambda j: job_make(j, Path(b["path"]), b.get("choices", {}), pv), path=b["path"], preview=pv)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
             if u.path == "/api/voice":
                 return self.json({"wav": voice_preview(Path(b["path"]), b.get("voice", ""), int(b.get("speed", 0)))})

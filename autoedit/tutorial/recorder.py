@@ -30,6 +30,35 @@ CURSOR = """(() => { const add = () => { if (document.getElementById('__cur')) r
 
 BLUR = "color: transparent !important; text-shadow: 0 0 9px rgba(30,30,30,.75) !important;"
 
+# 채팅 버튼·쿠키 안내 숨기기 (잘 알려진 것만 — 사이트 내용은 건드리지 않는다)
+WIDGETS = ["#ch-plugin", "#ch-plugin-core", ".ch-desk-messenger", "#kakao-talk-channel-chat-button", ".kakao_chat_btn",
+           "#intercom-container", ".intercom-lightweight-app", "#crisp-chatbox", ".crisp-client", "#tawk-bubble-container",
+           "iframe[title*='chat' i]", "iframe[title*='채팅']", "#onetrust-banner-sdk", "#onetrust-consent-sdk",
+           "#CybotCookiebotDialog", ".cc-window", "#cookie-banner", ".cookie-banner", "[id*='cookie-consent' i]",
+           "[class*='cookie-consent' i]", "#hubspot-messages-iframe-container", ".zopim", "#launcher[title*='chat' i]"]
+WIDGET_CSS = ", ".join(WIDGETS) + " { display: none !important; }"
+# 공지 팝업 닫기: 떠 있는 상자(대화 상자·고정 위치) 안의 '오늘 하루 보지 않기'·'닫기' 를 누른다
+CLOSE_POPUPS = r"""() => {
+  const words = [/오늘\s*(하루)?\s*(동안)?\s*(보지|열지)\s*않기/, /다시\s*보지\s*않기/, /^(닫기|close|×|✕|x)$/i];
+  const floating = el => { for (let e = el; e && e !== document.body; e = e.parentElement) {
+      const cs = getComputedStyle(e);
+      if (e.getAttribute('role') === 'dialog' || e.getAttribute('aria-modal') === 'true' ||
+          ((cs.position === 'fixed' || cs.position === 'absolute') && +cs.zIndex >= 100) ||
+          /popup|modal|layer_pop|layerpop/i.test(e.className || '') ) return true; } return false; };
+  let n = 0;
+  for (const re of words) {
+    for (const el of document.querySelectorAll('button, a, [role=button], span, div, label, input[type=checkbox]')) {
+      const t = (el.innerText || el.value || el.getAttribute('aria-label') || '').trim();
+      if (!t || t.length > 20 || !re.test(t)) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height || !floating(el)) continue;
+      el.click(); n++;
+    }
+    if (n) break;
+  }
+  return n;
+}"""
+
 
 def privacy_css(fields: list[str]) -> str:
     """개인정보 칸: 글자를 투명하게 하고 흐린 그림자만 남긴다(입력 중에도 실제 값이 보이지 않음).
@@ -220,6 +249,7 @@ class Recorder:
         opt.scroll_into_view_if_needed()
         ob = opt.bounding_box()
         self.glide(ob["x"] + min(60, ob["width"] / 2), ob["y"] + ob["height"] / 2, 0.3); self.click()
+        self.log["clicks"][-1]["kind"] = "목록"           # 검수용 표시(편집에는 영향 없음)
         self.sleep(0.3)
 
     def pick_native(self, p) -> None:
@@ -350,10 +380,29 @@ class Recorder:
         else:
             self.wait_until(end + s.gap)
 
+    def close_popups(self) -> int:
+        """공지 팝업을 닫는다. 장면 표에 '팝업닫기: false' 면 하지 않는다."""
+        if not self.sc.close_popups:
+            return 0
+        n = 0
+        for _ in range(3):
+            try:
+                k = self.pg.evaluate(CLOSE_POPUPS)
+            except Exception:
+                break
+            if not k:
+                break
+            n += k
+            self.sleep(0.4)
+        if n:
+            self.say(f"[녹화] 공지 팝업 {n}개를 닫았어요")
+        return n
+
     def scenario(self) -> None:
         pg = self.pg
         # 녹화 동기 표시: 화면을 0.3초 검게 → 영상에서 이 순간을 찾아 시각을 맞춘다
         pg.goto(self.sc.url, wait_until="networkidle", timeout=60000)
+        self.close_popups()
         pg.mouse.move(*self.pos)
         self.sleep(0.8)
         pg.evaluate("() => { const d = document.createElement('div'); d.id='__sync'; d.style.cssText='position:fixed;inset:0;background:#000;z-index:2147483646'; document.body.appendChild(d); }")
@@ -395,6 +444,8 @@ class Recorder:
                                      device_scale_factor=SCALE if method == "frames" else 1)
             ctx.add_init_script(CURSOR)
             css = privacy_css(self.sc.privacy_fields)
+            if self.sc.close_popups:
+                css = (css + "\n" + WIDGET_CSS).strip()
             if css:
                 ctx.add_init_script(style_script(css))
             pg = ctx.pages[0] if method == "x11" else ctx.new_page()
@@ -420,6 +471,9 @@ class Recorder:
                 self.frames.t0, self.frames.k = self.t0, self.k
             try:
                 self.scenario()
+                if mode == "rec":                 # 검수용: 녹화가 도는 동안 화면 사진 한 장(같은 순간의 녹화 프레임과 비교)
+                    self.log["marks"]["check_shot"] = round(self.now(), 3)
+                    pg.screenshot(path=str(out_dir / "check_shot.png"))
             finally:
                 if cap:
                     time.sleep(0.5)

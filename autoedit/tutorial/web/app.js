@@ -7,7 +7,17 @@ const STEPS = [
   { t: "만들기", d: "알아서 녹화·편집" },
   { t: "결과·내보내기", d: "영상과 파일 받기" },
 ];
-const MAKE_STAGES = ["목소리 만들기", "리허설", "자동 녹화", "화면 연출", "인트로·아웃트로·자막", "출력"];
+const MAKE_STAGES = ["목소리 만들기", "발음 검사", "리허설", "자동 녹화", "화면 연출", "인트로·아웃트로·자막", "출력", "자동 검수"];
+const PREVIEW_STAGES = ["목소리 만들기", "발음 검사", "리허설", "자동 녹화", "화면 연출", "인트로·아웃트로·자막", "출력"];
+const QA_CHIP = { ok: "ok", warn: "warn", fail: "warn" };
+function qaCard(q, title) {
+  if (!q) return "";
+  const bad = q["항목"].filter(i => i["판정"] !== "ok");
+  return `<section class="card"><h2>${title}</h2><p class="lead">1편 때 사람이 하던 확인을 프로그램이 했어요.</p>
+    <div class="${bad.length ? "verdict has-warn" : "summary"}" style="margin-bottom:var(--s2)">${bad.length ? `⚠ ${bad.length}개 확인 필요` : `✓ ${q["항목"].length}개 모두 통과`}</div>
+    <div class="qa">${q["항목"].map(i => `<div><span>${esc(i["이름"])}</span><span class="chip ${QA_CHIP[i["판정"]]}">${i["판정"] === "ok" ? "✓ " : "⚠ "}${esc(i["내용"])}</span></div>`).join("")}</div>
+    ${q["사진"] ? `<details style="margin-top:var(--s2)"><summary>장면별 사진<span>클릭 순간마다 한 장</span></summary><img src="${fileUrl(q["사진"])}" alt="장면별 사진" style="width:100%;border-radius:8px"></details>` : ""}</section>`;
+}
 const S = { cur: 0, st: null, proj: null, removed: [], choices: { voice: "현수 · 차분", deco: "brand", speed: 0, subtitles: true },
             job: null, url: "https://taekwonworld.net", title: "", poll: null, dirty: false, brandSel: "", tab: "B" };
 const $ = s => document.querySelector(s);
@@ -31,7 +41,7 @@ async function openProject(path, step = 1) {
 }
 
 // ── 단계 메뉴 ──
-function reachable(i) { return i === 0 || (S.proj && (i <= 3 || S.proj.video)); }
+function reachable(i) { return i === 0 || (S.proj && (i <= 3 || !!S.proj.video)); }
 function nav() {
   $("#nav").innerHTML = STEPS.map((s, i) => `<button type="button" class="step ${i === S.cur ? "on" : ""} ${i < S.cur ? "done" : ""}" data-i="${i}" ${reachable(i) ? "" : "disabled"}>
     <span class="n">${i < S.cur ? "✓" : i + 1}</span><span><b>${s.t}</b><small>${s.d}</small></span></button>`).join("");
@@ -81,7 +91,8 @@ const ACT_NAME = { "클릭": "클릭", "체크": "체크", "입력": "입력", "
 function targetCell(s, priv) {
   const vals = (s["칸"] || []).map(f => {
     const v = String(f["값"] ?? "");
-    if (v.startsWith("@보관함")) return '<span class="chip blur">🔒 비밀번호</span>';
+    if (v.startsWith("@보관함") || /pass(word)?|passwd|\bpw\d?\b|비밀번호/i.test(String(f["누를곳"]) + " " + (s["대상"] || "")))
+      return '<span class="chip blur">🔒 비밀번호</span>';             // 비밀번호는 화면에 절대 보이지 않게
     if (priv.has(f["누를곳"])) return '<span class="chip blur">흐림 처리</span>';
     return `<span class="chip">${esc(v)}</span>`;
   }).join(" ");
@@ -90,6 +101,7 @@ function targetCell(s, priv) {
 }
 function viewCheck() {
   const p = S.proj, d = p.scenario, reh = p.rehearsal, priv = new Set(d["개인정보칸"] || []);
+  const pron = {}; ((p.pronunciation || {}).items || []).forEach(i => { if (!i.ok) pron[i["키"]] = i; });
   const scenes = d["장면"] || [];
   const blk = d["요청차단"] || "";
   const rows = scenes.map((s, i) => {
@@ -99,13 +111,15 @@ function viewCheck() {
     const status = bad ? '<span class="chip warn">✗ 못 찾음</span>' : guard ? '<span class="chip warn">저장 차단</span>' : ok ? '<span class="chip ok">✓ 찾음</span>' : '<span class="hint">—</span>';
     return `<tr class="${bad ? "bad" : ""}"><td class="num">${String(i + 1).padStart(2, "0")}</td>
       <td class="say"><div contenteditable="true" data-say="${i}">${esc(s["말"])}</div>${s["말풍선"] ? `<div style="margin-top:4px"><span class="chip warn">말풍선 · ${esc(s["말풍선"])}</span></div>` : ""}
-        ${bad ? `<div class="hint" style="color:var(--red)">${esc(reh["메시지"])}</div>` : ""}</td>
+        ${bad ? `<div class="hint" style="color:var(--red)">${esc(reh["메시지"])}</div>` : ""}
+        ${pron[s["키"]] ? `<div class="hint" style="color:var(--warn)">⚠ 발음: '${esc(pron[s["키"]]["다르게"].map(w => w["단어"]).join("', '"))}' 이(가) 다르게 들려요 — "${esc(pron[s["키"]]["들림"])}". ${esc(pron[s["키"]]["다르게"][0]["제안"])}</div>` : ""}</td>
       <td>${ACT_NAME[s["동작"]] || esc(s["동작"])}</td><td>${targetCell(s, priv)}</td><td>${status}</td>
       <td><button class="x" type="button" data-del="${i}" title="이 장면 지우기">✕</button></td></tr>`;
   }).join("");
   const steps = (d["단계이름"] || []).map((n, i) => `<label class="chip" style="gap:6px">${i + 1} <input class="stepname" data-step="${i}" value="${esc(n)}" aria-label="${i + 1}단계 이름"></label>`).join("");
   const privChips = [...priv].map(x => `<span class="chip blur">${esc(nameOfField(scenes, x))}</span>`).join("") || '<span class="hint">없음</span>';
-  const warn = (p.warnings || []).map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("");
+  const warn = (p.warnings || []).map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("")
+    + (((p.pronunciation || {}).items || []).filter(i => !i.ok && !(d["장면"] || []).some(s => s["키"] === i["키"])).map(i => `<div class="verdict has-warn">⚠ 발음(${esc(i["키"])}): "${esc(i["말"])}" 이 "${esc(i["들림"])}" 로 들려요. 인트로·아웃트로 문장은 브랜드 인사말에서 고칠 수 있어요.</div>`).join(""));
   const rehBox = reh ? (reh.ok ? `<div class="summary"><span>✓ 리허설 통과 · 누를 곳 ${scenes.length}곳 모두 찾음</span></div>`
     : `<div class="err"><b>${reh["장면"]}번 장면에서 멈췄어요.</b><span>${esc(reh["메시지"])}</span></div>`) : "";
   const running = S.job && S.job.running && S.job.kind === "rehearse";
@@ -128,9 +142,15 @@ ${warn}${rehBox}
   <button class="primary" type="button" id="next">다음 →</button></span></div>`;
 }
 function nameOfField(scenes, sel) {
-  for (const s of scenes) for (const f of (s["칸"] || [])) if (f["누를곳"] === sel) return s["대상"] || sel;
-  for (const s of scenes) for (const f of (s["목록"] || [])) if (f["누를곳"] === sel) return s["대상"] || sel;
-  return sel.replace(/^.*name=["']?([\w-]+).*$/, "$1");
+  // 칸 이름: 잘 알려진 이름표(name=...) 먼저, 없으면 그 칸이 있는 장면의 대상
+  const n = String(sel).replace(/^.*name=["']?([\w-]+).*$/, "$1").replace(/^#/, "");
+  const KNOWN = { dob: "생년월일", birth: "생년월일", birthday: "생년월일", sex_code: "성별", sex: "성별", gender: "성별",
+                  last_name: "성", first_name: "이름", user_name: "이름", name: "이름", phone: "휴대전화", phone_number: "휴대전화",
+                  mobile: "휴대전화", email: "이메일", number_by_user: "인증번호", address: "주소", pw: "비밀번호", pw2: "비밀번호 확인" };
+  if (KNOWN[n]) return KNOWN[n];
+  for (const s of scenes) for (const f of (s["칸"] || [])) if (f["누를곳"] === sel) return s["대상"] || n;
+  for (const s of scenes) for (const f of (s["목록"] || [])) if (f["누를곳"] === sel) return s["대상"] || n;
+  return n;
 }
 async function saveScenario() {
   const r = await api("/api/project/save", { path: S.proj.path, scenario: S.proj.scenario });
@@ -169,7 +189,10 @@ function viewChoose() {
       <div class="group"><div class="k">말 빠르기</div><div><input type="range" id="spd" min="-10" max="10" step="2" value="${c.speed}" aria-label="말 빠르기"><div class="scale"><span>천천히</span><span>보통</span><span>빠르게</span></div></div></div>
       <div class="group"><div class="k">자막</div><div class="opts">${radios("sb", ["켜기", "끄기"], c.subtitles ? "켜기" : "끄기")}</div></div>
     </div></details>
-</section>${foot(true, "만들기 →")}`;
+</section>
+<div class="foot"><button class="ghost" type="button" id="prev">← 이전</button>
+  <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="ghost" type="button" id="quick" title="저화질로 먼저 빠르게 봅니다. 녹화는 최종본에서 그대로 다시 써요.">빠른 미리보기</button>
+  <button class="primary" type="button" id="next">만들기 →</button></span></div>`;
 }
 
 // ── 4. 만들기 ──
@@ -177,28 +200,33 @@ function viewMake() {
   const j = S.job || {};
   const mine = j.kind === "make";
   const done = new Set(mine ? j.done || [] : []);
-  const items = MAKE_STAGES.map(n => {
+  const pv = mine && j.preview;
+  const items = (pv ? PREVIEW_STAGES : MAKE_STAGES).map(n => {
     const st = !mine ? "" : (done.has(n) || (j.ok && !j.running)) ? "done" : j.stage === n && j.running ? "run" : "";
     const note = st === "run" ? (n === "자동 녹화" ? "보이지 않는 창에서 녹화 중" : "진행 중") : st === "done" ? "✓" : "";
     return `<div class="pi ${st}"><span class="ic">${st === "done" ? "✓" : ""}</span><span>${n}</span><small>${note}</small></div>`;
   }).join("");
-  const pct = !mine ? 0 : j.ok ? 100 : Math.round(100 * (done.size + 0.5) / MAKE_STAGES.length);
+  const pct = !mine ? 0 : j.ok ? 100 : Math.round(100 * (done.size + 0.5) / (pv ? PREVIEW_STAGES : MAKE_STAGES).length);
   const slow = S.st.capture === "frames" ? "이 컴퓨터에서는 화면을 한 장씩 찍어서 녹화가 조금 오래 걸려요. " : "";
   const eta = mine && j.running && j.eta != null ? `<div class="summary"><span>⏱ ${mins(j.eta)} 남았어요</span><small>${slow}다른 일을 하셔도 됩니다.</small></div>` : "";
   const err = mine && j.ok === false ? `<div class="err"><b>멈췄어요.</b><span>${esc(j.error)}</span>${j.scene ? '<button class="ghost" type="button" id="fix">장면 표에서 고치기</button>' : ""}</div>` : "";
   const warn = mine && j.ok && j.result && (j.result.warnings || []).length ? j.result.warnings.map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("") : "";
-  return `<section class="card"><h2>${mine && j.ok ? "다 만들었어요" : "만들고 있어요"}</h2>
+  if (pv && j.ok) return `<section class="card"><h2>빠른 미리보기</h2>
+    <p class="lead">저화질 미리보기예요. 괜찮으면 최종본을 만드세요 — 이미 찍은 녹화를 그대로 써서 녹화는 다시 안 해요.</p>
+    <video controls autoplay preload="metadata" src="${fileUrl(j.result.final)}"></video></section>${warn}
+    <div class="foot"><button class="ghost" type="button" id="toCheck">← 문장 고치기</button><button class="primary" type="button" id="final">이대로 최종본 만들기 →</button></div>`;
+  return `<section class="card"><h2>${mine && j.ok ? "다 만들었어요" : pv ? "빠른 미리보기를 만들고 있어요" : "만들고 있어요"}</h2>
   <p class="lead">녹화는 보이지 않는 브라우저 창에서 프로그램이 직접 조작합니다. 마우스를 건드려도 괜찮아요. 저장·발송 요청은 막혀 있어요.</p>
   <div class="bar-out" aria-hidden="true"><div class="bar-fill" style="width:${pct}%"></div></div>
   <div class="prog" style="margin-top:var(--s2)">${items}</div>
   ${eta ? `<div style="margin-top:var(--s2)">${eta}</div>` : ""}
-</section>${err}${warn}
+</section>${err}${warn}${mine && j.ok && j.result ? qaCard(j.result.qa, "자동 검수 결과") : ""}
 ${foot(true, "결과 보기 →", "next", !(mine && j.ok))}`;
 }
 
 // ── 5. 결과 ──
 function viewResult() {
-  const r = (S.job && S.job.kind === "make" && S.job.ok && S.job.result) || null;
+  const r = (S.job && S.job.kind === "make" && S.job.ok && S.job.result && !S.job.result.preview && S.job.result) || null;
   const video = r ? r.final : S.proj.video;
   const files = r ? r.files : (S.proj.files || [video]);
   const chap = r ? r.chapters : (S.proj.chapters || []);
@@ -213,6 +241,7 @@ function viewResult() {
   </div>
   ${chap.length ? `<details style="margin-top:var(--s2)"><summary>유튜브 챕터<span>설명란에 붙여 넣기</span></summary><div class="checks" style="flex-direction:column;align-items:flex-start"><pre style="margin:0;font-family:var(--body);line-height:1.7">${esc(chap.join("\n"))}</pre><button class="ghost" type="button" id="copyChap">복사</button></div></details>` : ""}
 </section>
+${qaCard((r && r.qa) || S.proj.qa, "자동 검수")}
 <section class="card"><h2>어디에 올릴까요?</h2>
   <p class="lead">올릴 곳을 고르면 파일과 글이 자동으로 준비되는 기능은 다음 업데이트에서 열려요. 지금은 위 파일을 그대로 올리시면 됩니다.</p>
   <div class="verdict">✓ 유튜브에 바로 올릴 수 있는 규격(1440p 60fps, H.264, 자막 .srt, 챕터)으로 만들었어요.</div>
@@ -262,14 +291,22 @@ function render() {
       if (!r.wav) { $("#playHint").textContent = r.error || "목소리를 만들지 못했어요(인터넷 연결 확인)."; return; }
       $("#playHint").textContent = ""; const a = $("#aud"); a.src = fileUrl(r.wav); a.play();
     });
-    on("#next", async () => {
-      const r = await api("/api/make", { path: S.proj.path, choices: S.choices });
+    const start = async preview => {
+      const r = await api("/api/make", { path: S.proj.path, choices: S.choices, preview });
       if (!r.ok) { alert(r.error || "시작하지 못했어요."); return; }
-      S.job = { kind: "make", running: true, done: [] }; go(3); startPoll();
-    });
+      S.job = { kind: "make", running: true, done: [], preview }; go(3); startPoll();
+    };
+    on("#next", () => start(false));
+    on("#quick", () => start(true));
   }
   if (S.cur === 3) {
     on("#next", () => go(4));
+    on("#toCheck", () => go(1));
+    on("#final", async () => {
+      const r = await api("/api/make", { path: S.proj.path, choices: S.choices, preview: false });
+      if (!r.ok) { alert(r.error || "시작하지 못했어요."); return; }
+      S.job = { kind: "make", running: true, done: [], preview: false }; render(); startPoll();
+    });
     on("#fix", async () => { await openProject(S.proj.path, 1); });
   }
   if (S.cur === 4) {

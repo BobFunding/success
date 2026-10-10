@@ -30,9 +30,11 @@ def human_type(pg, text, delay=0.08):
 s = DemoSession(URL, headless=True)
 pg = s.page
 time.sleep(0.8)                                            # 화면 둘러보기(머뭇거림)
+human_click(pg, pg.get_by_role("button", name="닫기"))      # 공지 팝업 닫기(장면에서 빠져야 함)
 human_click(pg, pg.get_by_role("link", name="자료 검색").first)   # 실수: 다른 메뉴
 pg.wait_for_load_state("networkidle"); time.sleep(0.6)
 pg.go_back(); pg.wait_for_load_state("networkidle"); time.sleep(0.5)   # 뒤로 가기
+human_click(pg, pg.get_by_role("button", name="오늘 하루 보지 않기"))   # 팝업이 다시 떠서 이번엔 하루 닫기
 pg.mouse.click(300, 700)                                    # 빈 곳 누르기
 human_click(pg, pg.get_by_role("link", name="회원가입 하기"))
 pg.wait_for_url("**/join.html"); time.sleep(0.5)

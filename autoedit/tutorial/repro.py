@@ -62,7 +62,7 @@ def stage_same(work: Path, sc) -> None:
 
 def stage_engine(work: Path, sc) -> None:
     from .rules import merged
-    maker.make(sc, work / "engine", rules=merged())          # 사용자가 바꾼 규칙과 무관하게 1편 기본 규칙으로
+    maker.make(sc, work / "engine", rules=merged(), check=False)   # 사용자가 바꾼 규칙과 무관하게 1편 기본 규칙으로
 
 
 # ── 비교 ──
