@@ -134,7 +134,8 @@ def compare_outputs(a: Path, b: Path, base: str, exact: bool) -> dict:
     times = [1.0, 5.0, 9.0] + [total * f for f in (0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8)] + [total - 6, total - 1.5]
     res["frames"] = [(round(t, 2), round(psnr(frame(fa, t), frame(fb, t)), 1)) for t in times]
     if exact:
-        res["ass"] = (a / f"{base}.ass").read_text(encoding="utf-8") == (b / f"{base}.ass").read_text(encoding="utf-8")
+        ass = lambda d: next(p for p in (d / f"{base}.ass", d / "ep1.ass") if p.exists())   # 원래 코드는 ep1.ass
+        res["ass"] = ass(a).read_text(encoding="utf-8") == ass(b).read_text(encoding="utf-8")
         res["srt"] = (a / f"{base}.srt").read_text(encoding="utf-8") == (b / f"{base}.srt").read_text(encoding="utf-8")
         res["ok"] = (res["ass"] and res["srt"] and res["chapters"] and res["len"][0] == res["len"][1]
                      and all(q >= 99 for _, q in res["frames"]))

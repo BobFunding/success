@@ -19,7 +19,7 @@ def narrate(sc: Scenario, work: Path, log=print) -> dict:
     if out.exists():
         return json.loads(out.read_text(encoding="utf-8"))
     lines = [N.Line(l.key, l.text, l.rate, l.pitch) for l in sc.lines()]
-    N.synthesize(lines, work / "narration", voice=sc.brand.voice, base_rate=sc.brand.voice_rate, log=log)
+    N.synthesize(lines, (work / "narration").resolve(), voice=sc.brand.voice, base_rate=sc.brand.voice_rate, log=log)
     nar = {l.key: [l.text, l.path, l.duration] for l in lines}
     out.write_text(json.dumps(nar, ensure_ascii=False, indent=1), encoding="utf-8")
     return nar
