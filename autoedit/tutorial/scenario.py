@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 PRESETS = Path(__file__).parent / "presets"
-ACTIONS = ("클릭", "체크", "입력", "선택", "스크롤", "보여주기", "대기")
+ACTIONS = ("클릭", "체크", "입력", "선택", "스크롤", "보여주기", "마우스올리기", "대기")
 GAP = 0.55                      # 문장 사이 쉼(1편)
 
 
@@ -78,6 +78,9 @@ class Scene:
     picks: list[Pick] = field(default_factory=list)
     scroll_first: tuple[float, float] | None = None   # (위치, 시간)
     scrolls: list[tuple[str, float, float]] = field(default_factory=list)  # ("스크롤", 위치, 시간) / ("대기", 초, 0)
+    hover: str = ""              # 누르기 전에 마우스를 올려 메뉴를 펼칠 곳
+    real_save: bool = False      # 이 장면만 실제로 저장(사람이 만들 때마다 확인해야 함)
+    screen_url: str = ""         # 시연 때 이 장면이 있던 화면 주소(참고용)
 
 
 @dataclass
@@ -112,10 +115,14 @@ class Scenario:
     next_episode: str = ""
     start_state: str = "로그아웃"
     privacy_fields: list[str] = field(default_factory=list)
-    block_requests: str = ""     # 이 주소가 들어간 화면에서는 저장·발송 요청(xhr/fetch) 차단
+    block_requests: str = ""     # 이 주소가 들어간 화면에서는 저장·발송 요청(xhr/fetch) 차단 (첫 번째, 예전 형식)
+    block_list: list[str] = field(default_factory=list)    # 차단할 화면 주소 전부 (요청차단: 목록도 됨)
     end_hold: float = 0.9        # 마지막 클릭 뒤 화면 유지
     rules: dict = field(default_factory=dict)   # 이번 영상만 규칙 층
     close_popups: bool = True    # 공지 팝업 닫기·채팅 버튼 숨기기
+    pre_scenes: list[Scene] = field(default_factory=list)   # 시작상태 로그인: 녹화 전에 미리 하는 장면(로그인)
+    login_url: str = ""          # 미리하기를 시작할 주소
+    done_url: str = ""           # 완료 화면: 마지막 클릭 뒤 보여 줄 테스트용 주소
     source: Path | None = None
 
     def lines(self) -> list[Line]:
@@ -156,7 +163,10 @@ def _scene(i: int, d: dict, gap: float) -> Scene:
     if d.get("먼저스크롤") is not None:
         s = d["먼저스크롤"]
         sc.scroll_first = (float(s["위치"]), float(s["시간"]))
-    if act in ("클릭", "체크") and not sc.target:
+    sc.hover = str(d.get("먼저올리기") or "")
+    sc.real_save = bool(d.get("실제저장", False))
+    sc.screen_url = str(d.get("화면주소") or "")
+    if act in ("클릭", "체크", "마우스올리기") and not sc.target:
         raise ScenarioError(f"{where}({act})에 누를 곳이 없어요. '대상'에 버튼 글자를 적어 주세요.")
     if act == "입력":
         raw = d.get("칸") or ([{"대상": sc.target, "값": d.get("값", "")}] if sc.target else [])
@@ -196,6 +206,12 @@ def brand_path(name: str) -> Path:
 def brand_names() -> list[str]:
     names = {p.stem for d in (PRESETS / "brands", USER_BRANDS) if d.exists() for p in d.glob("*.yaml")}
     return sorted(names, key=lambda n: (n == "basic", n))
+
+
+def _blk(v) -> list[str]:
+    if not v:
+        return []
+    return [str(x) for x in v] if isinstance(v, list) else [str(v)]
 
 
 def load_brand(name_or_path: str, base: Path | None = None) -> Brand:
@@ -247,9 +263,21 @@ def load(path: str | Path) -> Scenario:
                   steps=steps, scenes=scenes, intro=lines("인트로"), outro=lines("아웃트로"),
                   file_name=str(d.get("파일이름") or path.stem), next_episode=str(d.get("다음편") or ""),
                   start_state=str(d.get("시작상태") or "로그아웃"),
-                  privacy_fields=list(d.get("개인정보칸") or []), block_requests=str(d.get("요청차단") or ""),
+                  privacy_fields=list(d.get("개인정보칸") or []), block_requests=_blk(d.get("요청차단"))[0] if _blk(d.get("요청차단")) else "",
+                  block_list=_blk(d.get("요청차단")),
                   end_hold=float(d.get("끝유지", 0.9)), rules=dict(d.get("규칙") or {}),
-                  close_popups=bool(d.get("팝업닫기", True)), source=path)
+                  close_popups=bool(d.get("팝업닫기", True)), login_url=str(d.get("로그인주소") or ""),
+                  done_url=str(d.get("완료화면주소") or ""), source=path)
+    for i, x in enumerate(d.get("미리하기") or [], 1):
+        x = dict(x)
+        x.setdefault("단계", 1)
+        x.setdefault("말", "")
+        x.setdefault("키", f"P{i}")
+        ps = _scene(i, x, gap)
+        ps.no = -i                                       # 오류 메시지에서 '미리하기 i번' 으로
+        sc.pre_scenes.append(ps)
+    if sc.start_state == "로그인" and not sc.pre_scenes:
+        raise ScenarioError("'로그인한 상태에서 시작'에는 미리 할 로그인 장면이 필요해요.")
     keys = [ln.key for ln in sc.lines()]
     dup = {k for k in keys if keys.count(k) > 1}
     if dup:

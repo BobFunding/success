@@ -99,6 +99,25 @@ class Job:
             if est:
                 self.state["est"] = est
 
+    def ask(self, question: str, shot: str = "", timeout: float = 900) -> str:
+        """녹화 중에 사람에게 묻는다(인증번호 등). 화면에 질문이 뜨고, 답을 받을 때까지(최대 15분) 기다린다."""
+        ev = threading.Event()
+        with self.lock:
+            self.state["ask"] = {"question": question, "shot": shot, "asked": time.time()}
+            self._answer, self._ev = None, ev
+        ev.wait(timeout)
+        with self.lock:
+            self.state.pop("ask", None)
+            return self._answer or ""
+
+    def answer(self, value: str) -> bool:
+        with self.lock:
+            ev = getattr(self, "_ev", None)
+            self._answer = value
+        if ev:
+            ev.set()
+        return bool(ev)
+
     def view(self) -> dict:
         with self.lock:
             st = dict(self.state)
@@ -147,14 +166,16 @@ def project_view(path: Path) -> dict:
         warn = R.warnings(sc, R.merged(R.load_user(), sc.brand.rules, sc.rules))
         err = ""
     except S.ScenarioError as e:
-        warn, err = [], str(e)
+        warn, err, sc = [], str(e), None
     choices = json.loads((w / "choices.json").read_text(encoding="utf-8")) if (w / "choices.json").exists() else {}
     pron = json.loads((w / "pronunciation.json").read_text(encoding="utf-8")) if (w / "pronunciation.json").exists() else None
     qa_res = json.loads((w / "qa.json").read_text(encoding="utf-8")) if (w / "qa.json").exists() else None
+    from . import secrets as SEC
+    secrets_needed = SEC.needed(sc) if sc else []
     vids = sorted(w.glob("*_1440p60.mp4"))
     files = [str(f) for pat in ("*_1440p60.mp4", "*_1080p30.mp4", "*.srt", "챕터.txt") for f in sorted(w.glob(pat))]
     chap = (w / "챕터.txt").read_text(encoding="utf-8").splitlines() if (w / "챕터.txt").exists() else []
-    return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
+    return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "secrets": secrets_needed, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
             "choices": choices, "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
 
 
@@ -217,12 +238,18 @@ def job_rehearse(job: Job, path: Path, ch: dict):
     return {"ok": True}
 
 
-def job_make(job: Job, path: Path, ch: dict, preview: bool = False):
+def job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real: bool = False):
     from . import maker
+    from . import secrets as SEC
     sc = scenario_with_choices(path, ch)
+    missing = [n["칸"] for n in SEC.needed(sc) if not n["있음"]]
+    if missing:
+        raise ValueError(f"비밀번호가 보관함에 없어요: {', '.join(missing)}. 확인 단계에서 한 번 적어 주세요.")
     w = work_dir(path)
-    (w / "choices.json").write_text(json.dumps(ch, ensure_ascii=False), encoding="utf-8")
-    return maker.make(sc, w, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True), preview=preview)
+    (w / "choices.json").write_text(json.dumps({k: v for k, v in ch.items() if k != "allow_real"}, ensure_ascii=False),
+                                    encoding="utf-8")
+    return maker.make(sc, w, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True), preview=preview,
+                      ask=job.ask, allow_real=allow_real and not preview)
 
 
 def voice_preview(path: Path, voice_name: str, speed: int) -> str:
@@ -370,9 +397,21 @@ class Handler(BaseHTTPRequestHandler):
                 ok = JOB.start("rehearse", lambda j: job_rehearse(j, Path(b["path"]), b.get("choices", {})), path=b["path"])
                 return self.json({"ok": ok})
             if u.path == "/api/make":
-                pv = bool(b.get("preview"))
-                ok = JOB.start("make", lambda j: job_make(j, Path(b["path"]), b.get("choices", {}), pv), path=b["path"], preview=pv)
+                pv, real = bool(b.get("preview")), bool(b.get("allow_real"))   # 실제 저장은 화면에서 매번 확인받은 경우만
+                ok = JOB.start("make", lambda j: job_make(j, Path(b["path"]), b.get("choices", {}), pv, real),
+                               path=b["path"], preview=pv)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/answer":
+                return self.json({"ok": JOB.answer(str(b.get("value", "")))})
+            if u.path == "/api/secret":
+                from . import secrets as SEC
+                return self.json({"ok": True, "where": SEC.put(b["key"], b["value"])})
+            if u.path == "/api/project/startstate":
+                from .demo_record import set_start_state
+                p = Path(b["path"])
+                d = set_start_state(yaml.safe_load(p.read_text(encoding="utf-8")), b["state"])
+                np_ = save_project(p, d)
+                return self.json({"ok": True, "path": str(np_)})
             if u.path == "/api/voice":
                 return self.json({"wav": voice_preview(Path(b["path"]), b.get("voice", ""), int(b.get("speed", 0)))})
             if u.path == "/api/brand/save":

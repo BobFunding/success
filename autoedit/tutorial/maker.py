@@ -36,8 +36,8 @@ def narrate(sc: Scenario, work: Path, log=print) -> dict:
 def recording_key(sc: Scenario, dur: dict) -> str:
     """녹화에 영향을 주는 것(장면·문장 길이·주소·흐림·차단·녹화 방식)이 같으면 이미 찍은 녹화를 다시 쓴다."""
     from .capture import capture_method
-    return json.dumps([sc.url, [asdict(s) for s in sc.scenes], {k: round(v, 3) for k, v in dur.items()},
-                       sc.privacy_fields, sc.block_requests, sc.close_popups, sc.end_hold, capture_method()],
+    return json.dumps([sc.url, [asdict(s) for s in sc.pre_scenes + sc.scenes], sc.login_url, sc.done_url, {k: round(v, 3) for k, v in dur.items()},
+                       sc.privacy_fields, sc.block_list, sc.close_popups, sc.end_hold, capture_method()],
                       ensure_ascii=False, sort_keys=True, default=str)
 
 
@@ -73,7 +73,8 @@ def rehearse(sc: Scenario, work: Path, dur: dict, log=print) -> dict:
 
 
 def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print, rules: dict | None = None,
-         on_stage=None, subtitles: bool = True, preview: bool = False, check: bool = True) -> dict:
+         on_stage=None, subtitles: bool = True, preview: bool = False, check: bool = True, ask=None,
+         allow_real: bool = False) -> dict:
     """on_stage(이름, 예상초표): 화면에 진행 단계를 알리는 함수. rules 가 없으면 3층 규칙을 읽어 쓴다.
     preview: 빠른 미리보기(저화질). 같은 장면 표면 녹화는 최종본에서 다시 쓴다.
     check: 발음 검사·자동 검수를 한다(1편 재현 검사처럼 영상만 필요할 때는 끔)."""
@@ -96,6 +97,8 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
     if check and "목소리" in stages:
         stage("발음 검사", est)
         qa.pronunciation(sc, nar, work, log=log)
+    if allow_real and any(s.real_save for s in sc.scenes):
+        reuse = False                                   # 실제 저장은 확인받은 이번에만: 녹화를 새로
     if reuse:
         log("[녹화] 장면 표가 그대로라 이미 찍은 녹화를 다시 써요")
     else:
@@ -104,7 +107,7 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
             rehearse(sc, work, dur, log)
         if "녹화" in stages:
             stage("자동 녹화", est)
-            rec = Recorder(sc, dur, log).run("rec", work)
+            rec = Recorder(sc, dur, log, ask=ask, allow_real=allow_real).run("rec", work)
             off = find_sync(work / "cap.mkv", rec["marks"]["sync"])
             (work / "sync.json").write_text(json.dumps({"offset": off}))
             kp.write_text(rkey, encoding="utf-8")

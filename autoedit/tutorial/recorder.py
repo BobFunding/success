@@ -71,6 +71,15 @@ def privacy_css(fields: list[str]) -> str:
             f"{combos} {{ {BLUR} }}")
 
 
+def submit_guard(blk: list[str]) -> str:
+    """차단 화면에서 사이트 코드가 처리하지 않은 양식 제출(브라우저가 직접 보내는 것)을 막는다.
+    React 처럼 사이트가 직접 처리하는 제출은 건드리지 않는다(그 저장 요청은 xhr/fetch 차단이 막음)."""
+    return ("(() => { const blk = %s; window.addEventListener('submit', e => {"
+            " if (blk.some(b => location.href.includes(b)) && !e.defaultPrevented && !window.__tmAllow) {"
+            " e.preventDefault(); console.warn('[튜토리얼 메이커] 저장 차단: 양식 제출을 막았어요'); } }, false); })()"
+            % json.dumps(blk))
+
+
 def style_script(css: str) -> str:
     """모든 화면에 처음부터 CSS 를 넣는 init script."""
     return ("(() => { const css = %s; const add = () => { if (document.getElementById('__priv')) return;"
@@ -92,19 +101,25 @@ class SceneError(RuntimeError):
         self.scene = scene
         self.detail = detail
         name = scene.label or what
-        if detail and ("않았어요" in detail or "없어요" in detail):
-            msg = f"{scene.no}번 장면 '{name}': {detail}."
+        where = f"로그인(미리 하기) {-scene.no}번 장면" if scene.no < 0 else f"{scene.no}번 장면"
+        if detail and ("않았어요" in detail or "없어요" in detail or "멈췄어요" in detail or "같아요" in detail):
+            msg = f"{where} '{name}': {detail}."
         else:
-            msg = (f"{scene.no}번 장면의 '{name}'을(를) 찾지 못했어요. 화면 글자가 바뀌었는지 확인해 주세요."
+            msg = (f"{where}의 '{name}'을(를) 찾지 못했어요. 화면 글자가 바뀌었는지 확인해 주세요."
                    + (f" ({detail})" if re.search("[가-힣]", detail) else ""))   # 기술 용어(오류 이름)는 보여 주지 않음
         super().__init__(msg)
 
 
 class Recorder:
-    def __init__(self, sc: Scenario, durations: dict[str, float], log=print):
+    def __init__(self, sc: Scenario, durations: dict[str, float], log=print, ask=None, allow_real: bool = False):
+        """ask(질문, 화면사진경로) → 사람이 적은 값: 인증번호·로봇 확인처럼 사람만 아는 값을 녹화 중에 묻는다.
+        allow_real: '실제저장' 장면을 이번에만 실제로 실행해도 된다고 사람이 확인함."""
         self.sc = sc
         self.dur = durations
         self.say = log
+        self.ask = ask
+        self.allow_real = allow_real
+        self.unblock = False
         self.log = {"lines": [], "clicks": [], "spots": [], "marks": {}}
         self.pos = [960.0, 640.0]
         self.t0 = 0.0
@@ -118,8 +133,7 @@ class Recorder:
     def block_requests(self) -> None:
         """저장·발송 요청(xhr/fetch) 차단을 켠다(안전 규칙). 차단 주소 화면에서만 막는다.
         1편처럼 그 화면으로 넘어가기 직전에 켠다 — 처음부터 켜면 모든 요청이 거쳐 가서 화면이 늦게 뜬다."""
-        blk = self.sc.block_requests
-        if not blk or self.blocking:
+        if not self.sc.block_list or self.blocking:
             return
         pg = self.pg
 
@@ -127,9 +141,12 @@ class Recorder:
             q = r.request
             # xhr/fetch 전부 + 양식 제출(POST 로 화면 넘기기)도 막는다
             save = q.resource_type in ("xhr", "fetch") or (q.resource_type == "document" and q.method != "GET")
-            r.abort() if save and blk in (pg.url or "") else r.continue_()
+            r.abort() if save and self.blocked(pg.url or "") and not self.unblock else r.continue_()
         pg.route("**/*", guard)
         self.blocking = True
+
+    def blocked(self, url: str) -> bool:
+        return any(b in url for b in self.sc.block_list)
 
     # ── 기본 동작 (1편과 같은 계산) ──
     def now(self) -> float:
@@ -275,7 +292,10 @@ class Recorder:
         d = self.dur[s.key]
         if s.scroll_first:
             self.scroll_to(*s.scroll_first)
-        x, y, b = self.center(s.target, s.label)
+        if s.hover:      # 메뉴 안의 항목은 펼치기 전에는 안 보이므로 메뉴 머리 위치로 계산을 시작한다
+            x, y, b = self.center(s.hover, s.label)
+        else:
+            x, y, b = self.center(s.target, s.label)
         sb = self.box(s.spot_target, s.label) if s.spot_target else b
         move = s.move if s.move is not None else max(0.6, min(1.2, d * 0.35))
         s0 = self.now()
@@ -283,9 +303,30 @@ class Recorder:
         self.sleep(pre)
         if s.spot_from == "이동":
             s0 = self.now()
+        if s.hover:                                # 마우스를 올리면 열리는 메뉴: 먼저 올려서 펼친다
+            self.glide(x, y, min(0.6, move))
+            self.sleep(0.6)
+            head = b
+            x, y, b = self.center(s.target, s.label)
+            if s.spot_target:
+                sb = self.box(s.spot_target, s.label)
+            else:              # 밝게 할 곳 = 메뉴 머리 + 펼친 항목 (항목만 밝히면 펼치기 전엔 빈 칸이 밝아 보임)
+                x0, y0 = min(head["x"], b["x"]), min(head["y"], b["y"])
+                sb = {"x": x0, "y": y0, "width": max(head["x"] + head["width"], b["x"] + b["width"]) - x0,
+                      "height": max(head["y"] + head["height"], b["y"] + b["height"]) - y0}
+            # 메뉴 머리에서 항목으로: 먼저 아래로 내려가야 메뉴가 닫히지 않는다
+            self.glide(self.pos[0], y, 0.25)
+            move = max(0.35, move * 0.5)
         self.glide(x + s.offset[0], y + s.offset[1], move)
         self.wait_until(end - s.lead)
-        if self.sc.block_requests and self.sc.block_requests.strip("*") in s.next_url:
+        if s.real_save:
+            if self.allow_real:                    # 사람이 이번에 확인한 장면만 실제로 저장
+                self.unblock = True
+                self.pg.evaluate("() => { window.__tmAllow = true; }")
+                self.say(f"[녹화] {s.no}번 장면은 확인받은 대로 실제로 실행해요")
+            else:
+                self.say(f"[녹화] {s.no}번 장면은 저장 차단 상태로 누릅니다(완료 화면은 나오지 않을 수 있어요)")
+        if any(b.strip("*") in s.next_url for b in self.sc.block_list if s.next_url):
             self.block_requests()
         self.click()
         self.spot(sb, s0, self.now() + (s.spot_hold if s.spot_hold is not None else 0.4), s.spot_pad)
@@ -299,10 +340,7 @@ class Recorder:
             if s0 is None:
                 s0 = self.now()
             self.glide(x + f.approach, y, f.move)
-            value = f.value
-            if value.startswith("@보관함"):              # 비밀번호: 장면 표에는 없고 PC 안 보관함에서
-                from . import secrets
-                value = secrets.get(self.sc.file_name)
+            value = self.resolve_value(f)
             self.typ(f.target, value, f.delay)
             boxes.append(b)
         if s.button:
@@ -311,6 +349,37 @@ class Recorder:
             boxes.append(b2)
         hold = s.spot_hold if s.spot_hold is not None else (0.4 if s.button else 0.3)
         self.spot(self._union(boxes, s), s0, self.now() + hold, s.spot_pad)
+
+    def needs_ask(self) -> bool:
+        return any(f.value.startswith("@물어보기") for s in self.sc.scenes for f in s.fields)
+
+    def resolve_value(self, f) -> str:
+        """'@보관함' → PC 안 보관함, '@물어보기:질문' → 사람에게 묻기(리허설에서는 묻지 않고 임시 값)."""
+        v = f.value
+        if v.startswith("@보관함"):
+            from . import secrets
+            got = secrets.get(secrets.key_for(self.sc.login_url or self.sc.url, f.target, v))
+            if not got:
+                raise SceneError(self.scene, f.target, "비밀번호가 보관함에 없어요. 화면에서 한 번 적어 주세요")
+            return got
+        if v.startswith("@물어보기"):
+            q = v.split(":", 1)[1].strip() if ":" in v else "값을 적어 주세요"
+            if self.mode == "dry" or not self.ask:
+                return "0000"
+            shot = getattr(self, "out_dir", Path(tempfile.gettempdir())) / "ask.png"
+            try:
+                self.pg.screenshot(path=str(shot))
+            except Exception:
+                shot = None
+            t = time.monotonic()
+            ans = self.ask(q, str(shot) if shot else "")
+            self.t0 += time.monotonic() - t          # 사람을 기다린 시간은 영상 시간에서 뺀다(그동안 화면은 그대로)
+            if self.frames:
+                self.frames.t0 = self.t0
+            if not ans:
+                raise SceneError(self.scene, f.target, "값을 받지 못해 멈췄어요")
+            return ans
+        return v
 
     def do_pick(self, s: Scene, end: float) -> None:
         if s.scroll_first:
@@ -364,6 +433,13 @@ class Recorder:
                 raise
             except Exception:
                 raise SceneError(s, s.label or s.target, "누른 뒤 다음 화면으로 넘어가지 않았어요") from None
+        elif s.action == "마우스올리기":
+            x, y, b = self.center(s.target, s.label)
+            s0 = self.now()
+            self.glide(x, y, s.move or 0.7)
+            self.spot(b, s0, end, s.spot_pad)
+        elif s.action == "보여주기" and s.target:
+            self.do_show(s, end)
         elif s.action == "입력":
             self.do_type(s, end)
         elif s.action == "선택":
@@ -374,11 +450,80 @@ class Recorder:
                     self.sleep(a)
                 else:
                     self.scroll_to(a, b)
-        # 보여주기·대기: 화면은 그대로, 문장만
+        # 보여주기(대상 없음)·대기: 화면은 그대로, 문장만
+        if last and self.sc.done_url:              # 저장은 막고, 테스트용 주소의 완료 화면을 보여 준다
+            self.sleep(0.5)
+            self.pg.goto(self.sc.done_url, wait_until="networkidle", timeout=30000)
+            self.sleep(1.2)
         if last:
             self.sleep(self.sc.end_hold)
         else:
             self.wait_until(end + s.gap)
+
+    def do_show(self, s: Scene, end: float) -> None:
+        """보여 주기: 누르지 않고, 그곳이 보이게 천천히 스크롤한 뒤 밝게 하고 커서를 옆에 둔다."""
+        loc = self.locate(s.target)
+        s0 = self.now()
+        try:
+            top = loc.evaluate("e => e.getBoundingClientRect().top + scrollY - Math.max(80, (innerHeight - e.getBoundingClientRect().height) / 3)",
+                               timeout=10000)
+            top = max(0.0, min(top, self.pg.evaluate("document.documentElement.scrollHeight - innerHeight")))
+            if abs(top - self.pg.evaluate("scrollY")) > 40:
+                self.scroll_to(top, 1.0)
+        except Exception:
+            raise SceneError(s, s.label or s.target) from None
+        x, y, b = self.center(s.target, s.label)
+        # 제목·글자를 가리켰으면 그 글자가 든 상자(카드) 전체를 밝게: 화면의 절반보다 작은 가장 가까운 상자
+        try:
+            box = loc.evaluate("""e => { if (!/^(H[1-6]|LABEL|SPAN|STRONG|B|P|LEGEND)$/.test(e.tagName)) return null;
+              for (let p = e.parentElement, i = 0; p && i < 4; p = p.parentElement, i++) {
+                const r = p.getBoundingClientRect();
+                if (r.width * r.height > innerWidth * innerHeight * 0.5) break;
+                if (r.height > e.getBoundingClientRect().height * 1.6) return {x: r.x, y: r.y, width: r.width, height: r.height}; }
+              return null; }""")
+            if box:
+                b = box
+        except Exception:
+            pass
+        self.glide(min(b["x"] + b["width"] + 30, W - 40), b["y"] + min(b["height"] / 2, 60), 0.8)
+        self.spot(b, s0, max(end, self.now() + 1.5), s.spot_pad)
+
+    def run_pre(self) -> None:
+        """시작상태 로그인: 녹화하기 전에 로그인 장면을 빠르게 해 둔다(영상에 들어가지 않음)."""
+        if not self.sc.pre_scenes:
+            return
+        pg = self.pg
+        pg.goto(self.sc.login_url or self.sc.url, wait_until="networkidle", timeout=60000)
+        self.close_popups()
+        for s in self.sc.pre_scenes:
+            self.scene = s
+            try:
+                if s.action in ("클릭", "체크"):
+                    self.locate(s.target).click(timeout=10000)
+                elif s.action == "입력":
+                    for f in s.fields:
+                        self.locate(f.target).fill(self.resolve_value(f), timeout=10000)
+                    if s.button:
+                        self.locate(s.button).click(timeout=10000)
+                elif s.action == "선택":
+                    for p in s.picks:
+                        if p.target:
+                            self.locate(p.target).select_option(label=p.text) if p.text else \
+                                self.locate(p.target).select_option(index=int(p.index or 0))
+                        else:
+                            self.pick(p.box, p.index, p.text)
+                if s.next_url:
+                    pg.wait_for_url(s.next_url, timeout=15000)
+                pg.wait_for_load_state("networkidle")
+            except SceneError:
+                raise
+            except Exception:
+                raise SceneError(s, s.label or s.target, "로그인하는 중에 멈췄어요") from None
+        time.sleep(0.5)
+        if pg.locator("input[type=password]:visible").count():
+            raise SceneError(self.sc.pre_scenes[-1], "로그인", "로그인에 실패한 것 같아요(비밀번호 칸이 그대로 있어요). 보관함의 비밀번호를 확인해 주세요")
+        self.scene = None
+        self.say("[녹화] 로그인을 미리 해 뒀어요(영상에는 안 들어감)")
 
     def close_popups(self) -> int:
         """공지 팝업을 닫는다. 장면 표에 '팝업닫기: false' 면 하지 않는다."""
@@ -424,8 +569,11 @@ class Recorder:
         """mode: dry(리허설) / rec(녹화). 녹화 방식은 capture.method() 가 고른다(사용자는 고르지 않음)."""
         from playwright.sync_api import sync_playwright
         self.mode = mode
+        self.out_dir = out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         method = capture_method() if mode == "rec" else "dry"
+        if mode == "rec" and self.needs_ask():
+            method = "frames"   # 사람에게 묻는 동안 녹화를 멈출 수 있는 방식(기다린 시간은 영상에서 빠짐)
         cap = None
         with sync_playwright() as p:
             if method == "x11":
@@ -451,12 +599,13 @@ class Recorder:
             pg = ctx.pages[0] if method == "x11" else ctx.new_page()
             self.pg = pg
             pg.on("dialog", lambda d: d.dismiss())
-            if self.sc.block_requests:
-                if self.sc.block_requests in self.sc.url:
+            if self.sc.block_list:
+                ctx.add_init_script(submit_guard(self.sc.block_list))
+                if self.blocked(self.sc.url):
                     self.block_requests()
                 # 장면 표에 적지 않은 길로 차단 화면에 들어가도 바로 켠다
-                pg.on("framenavigated", lambda f: f == pg.main_frame and self.sc.block_requests in f.url
-                      and self.block_requests())
+                pg.on("framenavigated", lambda f: f == pg.main_frame and self.blocked(f.url) and self.block_requests())
+            self.run_pre()
             if method == "x11":
                 pg.goto("about:blank"); time.sleep(0.5)
                 cap.start(out_dir / "cap.mkv")

@@ -93,11 +93,13 @@ function targetCell(s, priv) {
     const v = String(f["값"] ?? "");
     if (v.startsWith("@보관함") || /pass(word)?|passwd|\bpw\d?\b|비밀번호/i.test(String(f["누를곳"]) + " " + (s["대상"] || "")))
       return '<span class="chip blur">🔒 비밀번호</span>';             // 비밀번호는 화면에 절대 보이지 않게
+    if (v.startsWith("@물어보기")) return '<span class="chip warn">녹화할 때 물어봐요</span>';
     if (priv.has(f["누를곳"])) return '<span class="chip blur">흐림 처리</span>';
     return `<span class="chip">${esc(v)}</span>`;
   }).join(" ");
   const btn = s["버튼"] ? ` → <span class="chip">${esc(s["버튼이름"] || String(s["버튼"]).replace(/^.*has-text\('(.+)'\).*$/, "$1"))}</span>` : "";
-  return `${esc(s["대상"] || "")} ${vals}${btn}`;
+  const hov = s["먼저올리기"] ? `<span class="chip">메뉴 먼저 펼침</span> ` : "";
+  return `${hov}${esc(s["대상"] || "")} ${vals}${btn}`;
 }
 function viewCheck() {
   const p = S.proj, d = p.scenario, reh = p.rehearsal, priv = new Set(d["개인정보칸"] || []);
@@ -108,7 +110,8 @@ function viewCheck() {
     const bad = reh && !reh.ok && reh["장면"] === i + 1;
     const ok = reh && (reh.ok || reh["장면"] > i + 1);
     const guard = blk && i === scenes.length - 1 && s["동작"] === "클릭";
-    const status = bad ? '<span class="chip warn">✗ 못 찾음</span>' : guard ? '<span class="chip warn">저장 차단</span>' : ok ? '<span class="chip ok">✓ 찾음</span>' : '<span class="hint">—</span>';
+    const gtxt = s["실제저장"] ? "실제로 실행(확인 후)" : d["완료화면주소"] ? "차단 · 테스트 완료 화면" : "저장 차단";
+    const status = bad ? '<span class="chip warn">✗ 못 찾음</span>' : guard ? `<button class="chip warn" type="button" id="doneOpt" style="border:0;cursor:pointer">${gtxt} ▾</button>` : ok ? '<span class="chip ok">✓ 찾음</span>' : '<span class="hint">—</span>';
     return `<tr class="${bad ? "bad" : ""}"><td class="num">${String(i + 1).padStart(2, "0")}</td>
       <td class="say"><div contenteditable="true" data-say="${i}">${esc(s["말"])}</div>${s["말풍선"] ? `<div style="margin-top:4px"><span class="chip warn">말풍선 · ${esc(s["말풍선"])}</span></div>` : ""}
         ${bad ? `<div class="hint" style="color:var(--red)">${esc(reh["메시지"])}</div>` : ""}
@@ -134,12 +137,37 @@ ${warn}${rehBox}
   <div class="card"><h2>단계 묶음</h2><p class="lead">영상 왼쪽 위에 표시됩니다. 눌러서 이름을 고칠 수 있어요.</p><div class="opts">${steps}</div></div>
   <div class="card"><h2>개인정보</h2><p class="lead">녹화할 때부터 글자를 흐리게 합니다.</p><div class="opts">${privChips}</div></div>
 </section>
+${secretCard(p)}${doneCard(d, scenes)}
 <section class="card"><h2>시작 화면</h2><p class="lead">로그인 과정을 영상에 넣을지 고르세요.</p>
-  <div class="opts"><label class="opt"><input type="radio" name="st" checked><span>로그아웃 상태에서 (로그인도 보여 주기)</span></label>
-  <label class="opt"><input type="radio" name="st" disabled><span>로그인한 상태에서 <em class="soon">준비 중</em></span></label></div></section>
+  <div class="opts"><label class="opt"><input type="radio" name="st" value="로그아웃" ${d["시작상태"] !== "로그인" ? "checked" : ""}><span>로그아웃 상태에서 (로그인도 보여 주기)</span></label>
+  <label class="opt"><input type="radio" name="st" value="로그인" ${d["시작상태"] === "로그인" ? "checked" : ""}><span>로그인한 상태에서 (로그인은 녹화 안 함)</span></label></div>
+  ${d["시작상태"] === "로그인" ? `<p class="hint" style="margin:8px 0 0">로그인 장면 ${(d["미리하기"] || []).length}개는 녹화 전에 프로그램이 미리 해 둬요. 영상은 ${esc(d["주소"])} 에서 시작해요.</p>` : ""}</section>
+<section class="card"><h2>보여 주기 장면 추가</h2><p class="lead">누르지 않고 한 곳을 밝게 보여 주며 설명하는 장면이에요. (예: "여기에 오늘 할 일이 모여 있어요.")</p>
+  <div class="row3"><label class="f">몇 번 장면 뒤에<select id="shAfter">${scenes.map((x, i) => `<option value="${i}">${i + 1}번 뒤</option>`).join("")}</select></label>
+  <label class="f">보여 줄 곳 (화면에 보이는 글자)<input type="text" id="shTgt" placeholder="예: 오늘 할 일"></label>
+  <label class="f">할 말<input type="text" id="shSay" placeholder="예: 여기에 오늘 할 일이 모여 있어요."></label></div>
+  <div class="foot"><span></span><button class="ghost" type="button" id="shAdd">＋ 추가</button></div></section>
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button>
   <span style="display:flex;gap:8px;flex-wrap:wrap"><button class="ghost" type="button" id="reh" ${running ? "disabled" : ""}>${running ? "리허설 중…" : "리허설 해 보기"}</button>
   <button class="primary" type="button" id="next">다음 →</button></span></div>`;
+}
+function secretCard(p) {
+  const need = (p.secrets || []);
+  if (!need.length) return "";
+  return `<section class="card"><h2>🔒 비밀번호</h2><p class="lead">화면은 기록했지만 비밀번호는 기록하지 않았어요. 한 번만 적어 두면 이 PC 보관함에만 저장되고 다시 묻지 않아요.</p>
+    <div class="plist">${need.map((n, i) => `<div class="pitem"><span>${esc(n["칸"])} <small>${esc(n["키"].split("|")[0])}</small></span>
+      ${n["있음"] ? '<span class="chip ok">✓ 저장됨</span>' : `<span class="inline" style="flex:1;justify-content:flex-end"><input type="password" data-secret="${esc(n["키"])}" placeholder="비밀번호" aria-label="${esc(n["칸"])} 비밀번호" style="max-width:260px"><button class="ghost" type="button" data-secret-save="${esc(n["키"])}">저장</button></span>`}</div>`).join("")}</div></section>`;
+}
+function doneCard(d, scenes) {
+  if (!S.showDone) return "";
+  const last = scenes[scenes.length - 1] || {};
+  const mode = last["실제저장"] ? "real" : d["완료화면주소"] ? "url" : "block";
+  return `<section class="card"><h2>마지막 장면의 완료 화면</h2><p class="lead">저장·발송을 막아 두어서 마지막 버튼을 눌러도 완료 화면이 안 나올 수 있어요. 어떻게 할까요?</p>
+    <div class="opts" style="flex-direction:column;align-items:flex-start">
+      <label class="opt"><input type="radio" name="dn" value="block" ${mode === "block" ? "checked" : ""}><span>막은 채로 (완료 화면 없이 누르는 장면까지만)</span></label>
+      <label class="opt"><input type="radio" name="dn" value="url" ${mode === "url" ? "checked" : ""}><span>테스트용 주소의 완료 화면 보여 주기</span></label>
+      <label class="opt"><input type="radio" name="dn" value="real" ${mode === "real" ? "checked" : ""}><span>이 장면만 실제로 실행 (데모 계정일 때 · 만들 때마다 다시 확인)</span></label></div>
+    <label class="f" style="margin-top:8px" ${mode === "url" ? "" : "hidden"} id="dnUrlBox">완료 화면 주소<input type="text" id="dnUrl" value="${esc(d["완료화면주소"] || "")}" placeholder="https://test.example.com/done"></label></section>`;
 }
 function nameOfField(scenes, sel) {
   // 칸 이름: 잘 알려진 이름표(name=...) 먼저, 없으면 그 칸이 있는 장면의 대상
@@ -209,13 +237,17 @@ function viewMake() {
   const pct = !mine ? 0 : j.ok ? 100 : Math.round(100 * (done.size + 0.5) / (pv ? PREVIEW_STAGES : MAKE_STAGES).length);
   const slow = S.st.capture === "frames" ? "이 컴퓨터에서는 화면을 한 장씩 찍어서 녹화가 조금 오래 걸려요. " : "";
   const eta = mine && j.running && j.eta != null ? `<div class="summary"><span>⏱ ${mins(j.eta)} 남았어요</span><small>${slow}다른 일을 하셔도 됩니다.</small></div>` : "";
+  const askBox = mine && j.ask ? `<section class="card" style="border-color:var(--blue)"><h2>잠깐, 도와주세요</h2>
+    <p class="lead">${esc(j.ask.question)} — 녹화는 멈춰 있고, 기다린 시간은 영상에서 빠져요.</p>
+    ${j.ask.shot ? `<img src="${fileUrl(j.ask.shot)}&t=${j.ask.asked}" alt="지금 화면" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ""}
+    <div class="inline" style="margin-top:var(--s2)"><input type="text" id="ansV" placeholder="여기에 적어 주세요" aria-label="답"><button class="primary" type="button" id="ansGo">보내기</button></div></section>` : "";
   const err = mine && j.ok === false ? `<div class="err"><b>멈췄어요.</b><span>${esc(j.error)}</span>${j.scene ? '<button class="ghost" type="button" id="fix">장면 표에서 고치기</button>' : ""}</div>` : "";
   const warn = mine && j.ok && j.result && (j.result.warnings || []).length ? j.result.warnings.map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("") : "";
   if (pv && j.ok) return `<section class="card"><h2>빠른 미리보기</h2>
     <p class="lead">저화질 미리보기예요. 괜찮으면 최종본을 만드세요 — 이미 찍은 녹화를 그대로 써서 녹화는 다시 안 해요.</p>
     <video controls autoplay preload="metadata" src="${fileUrl(j.result.final)}"></video></section>${warn}
     <div class="foot"><button class="ghost" type="button" id="toCheck">← 문장 고치기</button><button class="primary" type="button" id="final">이대로 최종본 만들기 →</button></div>`;
-  return `<section class="card"><h2>${mine && j.ok ? "다 만들었어요" : pv ? "빠른 미리보기를 만들고 있어요" : "만들고 있어요"}</h2>
+  return `${askBox}<section class="card"><h2>${mine && j.ok ? "다 만들었어요" : pv ? "빠른 미리보기를 만들고 있어요" : "만들고 있어요"}</h2>
   <p class="lead">녹화는 보이지 않는 브라우저 창에서 프로그램이 직접 조작합니다. 마우스를 건드려도 괜찮아요. 저장·발송 요청은 막혀 있어요.</p>
   <div class="bar-out" aria-hidden="true"><div class="bar-fill" style="width:${pct}%"></div></div>
   <div class="prog" style="margin-top:var(--s2)">${items}</div>
@@ -276,6 +308,39 @@ function render() {
       S.removed.push({ i, s: sc.splice(i, 1)[0] }); S.dirty = true; render();
     });
     on("#undo", () => { const x = S.removed.pop(); S.proj.scenario["장면"].splice(x.i, 0, x.s); S.dirty = true; render(); });
+    document.querySelectorAll("input[name=st]").forEach(r => r.onchange = async () => {
+      if (S.dirty && !(await saveScenario())) return;
+      const res = await api("/api/project/startstate", { path: S.proj.path, state: r.value });
+      if (!res.ok) { alert(res.error); render(); return; }
+      S.proj.path = res.path; Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(res.path))); render();
+    });
+    document.querySelectorAll("[data-secret-save]").forEach(b => b.onclick = async () => {
+      const k = b.dataset.secretSave, v = document.querySelector(`[data-secret="${CSS.escape(k)}"]`).value;
+      if (!v) return;
+      const r = await api("/api/secret", { key: k, value: v });
+      if (r.ok) { Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path))); render(); }
+    });
+    on("#doneOpt", () => { S.showDone = !S.showDone; render(); });
+    document.querySelectorAll("input[name=dn]").forEach(r => r.onchange = () => {
+      const d = S.proj.scenario, last = d["장면"][d["장면"].length - 1];
+      delete last["실제저장"]; delete d["완료화면주소"];
+      if (r.value === "real") last["실제저장"] = true;
+      if (r.value === "url") d["완료화면주소"] = ($("#dnUrl") && $("#dnUrl").value) || "";
+      S.dirty = true; render();
+    });
+    const du = $("#dnUrl"); if (du) du.oninput = () => { S.proj.scenario["완료화면주소"] = du.value.trim(); S.dirty = true; };
+    on("#shAdd", () => {
+      const tgt = $("#shTgt").value.trim(), say = $("#shSay").value.trim(), at = +$("#shAfter").value;
+      if (!tgt || !say) { alert("보여 줄 곳과 할 말을 적어 주세요."); return; }
+      const sc = S.proj.scenario["장면"], prev = sc[at];
+      // 이 장면이 있을 화면: 앞 장면이 다른 화면으로 넘어가면 그 화면, 아니면 앞 장면과 같은 화면
+      let url = prev["화면주소"] || "";
+      if (prev["다음주소"] && url) { try { url = new URL(prev["다음주소"].replace(/^\*+/, ""), url).href; } catch (_) {} }
+      // 단계: 앞 장면이 다른 화면으로 넘어가면 그 화면의 장면(다음 장면)과 같은 단계
+      const step = prev["다음주소"] && sc[at + 1] ? sc[at + 1]["단계"] : prev["단계"];
+      sc.splice(at + 1, 0, { "키": "V" + Date.now().toString(36), "단계": step, "동작": "보여주기", "대상": tgt, "말": say, "화면주소": url });
+      S.dirty = true; render();
+    });
     on("#reh", async () => { if (S.dirty && !(await saveScenario())) return; await api("/api/rehearse", { path: S.proj.path, choices: S.choices }); startPoll(); render(); });
     on("#next", () => go(2));
   }
@@ -292,7 +357,10 @@ function render() {
       $("#playHint").textContent = ""; const a = $("#aud"); a.src = fileUrl(r.wav); a.play();
     });
     const start = async preview => {
-      const r = await api("/api/make", { path: S.proj.path, choices: S.choices, preview });
+      let allow_real = false;
+      if (!preview && (S.proj.scenario["장면"] || []).some(x => x["실제저장"]))
+        allow_real = confirm("마지막 장면은 실제로 저장·발송돼요.\n데모 계정과 테스트용 값으로 만들고 있나요?\n[확인] 실제로 실행  ·  [취소] 막은 채로 만들기");
+      const r = await api("/api/make", { path: S.proj.path, choices: S.choices, preview, allow_real });
       if (!r.ok) { alert(r.error || "시작하지 못했어요."); return; }
       S.job = { kind: "make", running: true, done: [], preview }; go(3); startPoll();
     };
@@ -302,8 +370,12 @@ function render() {
   if (S.cur === 3) {
     on("#next", () => go(4));
     on("#toCheck", () => go(1));
+    on("#ansGo", async () => { const v = $("#ansV").value.trim(); if (!v) return; await api("/api/answer", { value: v }); S.job.ask = null; render(); });
     on("#final", async () => {
-      const r = await api("/api/make", { path: S.proj.path, choices: S.choices, preview: false });
+      let allow_real = false;
+      if ((S.proj.scenario["장면"] || []).some(x => x["실제저장"]))
+        allow_real = confirm("마지막 장면은 실제로 저장·발송돼요.\n데모 계정과 테스트용 값으로 만들고 있나요?\n[확인] 실제로 실행  ·  [취소] 막은 채로 만들기");
+      const r = await api("/api/make", { path: S.proj.path, choices: S.choices, preview: false, allow_real });
       if (!r.ok) { alert(r.error || "시작하지 못했어요."); return; }
       S.job = { kind: "make", running: true, done: [], preview: false }; render(); startPoll();
     });
@@ -337,8 +409,9 @@ function startPoll() {
       if (j.ok) { S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path))); }
     }
     if ((S.cur === 0 && j.kind === "demo") || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
-      const focus = document.activeElement && document.activeElement.isContentEditable;
-      if (!focus) render();
+      const ae = document.activeElement;
+      const typing = ae && (ae.isContentEditable || ae.id === "ansV" || ae.type === "password");
+      if (!typing) render();
     }
   }, 1000);
 }

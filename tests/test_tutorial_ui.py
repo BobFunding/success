@@ -96,3 +96,37 @@ def test_server_saves_rules(srv, tmp_path):
     d = json.loads(urllib.request.urlopen(req).read())
     assert d["rules"]["문장사이쉼"] == 0.7
     assert "문장사이쉼: 0.7" in (tmp_path / "rules.yaml").read_text(encoding="utf-8")
+
+
+def test_secrets_file_store(tmp_path, monkeypatch):
+    from autoedit.tutorial import secrets as SEC
+    monkeypatch.delenv("TUTORIAL_SECRET", raising=False)
+    monkeypatch.setattr(SEC, "STORE", tmp_path / "s.json")
+    monkeypatch.setattr(SEC, "_kr", lambda: None)                 # 운영체제 보관함이 없는 PC
+    k = SEC.key_for("https://example.com/login", "#pw")
+    assert k == "example.com|#pw" and SEC.key_for("https://a.com", "#pw", "@보관함:관리자") == "a.com|관리자"
+    assert not SEC.has(k)
+    assert SEC.put(k, "pa ss") == "이 PC 안 파일" and SEC.get(k) == "pa ss"
+    sc = S.load(EP1)
+    sc.scenes[5].fields[0].value = "@보관함"                    # F2 아이디 칸을 보관함 값으로 바꿔 봄
+    need = SEC.needed(sc)
+    assert need and need[0]["키"].startswith("taekwonworld.net|") and need[0]["있음"] is False
+
+
+def test_repro_compares_per_scene_timing_not_accumulated_drift():
+    """한 장면이 사이트 로딩으로 늦어져 뒤가 다 밀려도, 장면 안 박자가 같으면 같은 것으로 본다."""
+    from autoedit.tutorial.repro import compare_logs
+    def log(shift):
+        lines = [{"key": "A", "t": 1.0}, {"key": "B", "t": 5.0 + shift}]
+        return {"marks": {"body_start": 0.0}, "lines": lines,
+                "clicks": [{"t": 2.0, "x": 10, "y": 10}, {"t": 6.0 + shift, "x": 20, "y": 20}],
+                "spots": [{"start": 1.5, "end": 2.4, "x": 0, "y": 0, "w": 50, "h": 50},
+                          {"start": 5.5 + shift, "end": 6.4 + shift, "x": 0, "y": 0, "w": 50, "h": 50}]}
+    r = compare_logs(log(0.0), log(0.5))
+    assert r["ok"] and r["drift"] == 0.5 and r["scene_t"] == 0.0
+    bad = log(0.5)
+    bad["clicks"][1]["t"] += 0.4                                        # 장면 안에서 박자가 다름
+    assert not compare_logs(log(0.0), bad)["ok"]
+    moved = log(0.0)
+    moved["clicks"][0]["x"] = 40                                        # 누른 자리가 다름
+    assert not compare_logs(log(0.0), moved)["ok"]

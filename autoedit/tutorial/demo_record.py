@@ -79,11 +79,19 @@ RECORDER_JS = r"""(() => {
       combo: combos.indexOf(el.closest('div[role=combobox]')), option: opts.indexOf(el.closest('[role=option]')),
       url: location.href, heading: h ? short(h.innerText) : '', title: document.title, t: performance.timeOrigin + performance.now() };
   }
+  // 마우스를 올리면 열리는 메뉴: 마지막으로 올린 메뉴 머리를 기억했다가, 그 안의 항목을 누르면 함께 기록
+  const HOVER = '[aria-haspopup], .dropdown, .has-sub, .menu-item-has-children, nav li, li:has(> ul), li:has(> [role=menu])';
+  let hov = null;
+  document.addEventListener('mouseover', ev => {
+    const t = ev.target.closest && ev.target.closest(HOVER);
+    if (t && (!hov || hov.el !== t)) { const head = t.querySelector(':scope > a, :scope > button, :scope > span') || t; hov = { el: t, head, sel: selectors(head) }; }
+  }, true);
   document.addEventListener('click', ev => {
     const el = actionable(ev.target);
     const d = Object.assign({ ev: 'click', hit: !!el }, info(el || ev.target));
     // 체크 칸에 붙은 글자(label)를 누른 것: change 이벤트로 받으므로 표시만
     if (el && el.tagName === 'LABEL' && el.control && ['checkbox', 'radio'].includes(el.control.type)) d.forCheck = true;
+    if (el && hov && hov.el.contains(el) && el !== hov.head && !hov.head.contains(el)) d.hover = hov.sel[0];
     send(d);
   }, true);
   document.addEventListener('input', ev => {
@@ -100,6 +108,7 @@ RECORDER_JS = r"""(() => {
 })()"""
 
 POPUP_CLOSE = re.compile(r"오늘\s*(하루)?\s*(동안)?\s*(보지|열지)\s*않기|다시\s*보지\s*않기|^(닫기|close|×|✕|x)$", re.I)
+VERIFY = re.compile(r"인증\s*번호|인증\s*코드|확인\s*코드|OTP|보안\s*문자|자동\s*입력\s*방지|captcha", re.I)
 PRIVATE = re.compile(r"이름|성명|성\b|name|전화|휴대|phone|mobile|tel|생년|생일|birth|dob|주소|address|이메일|e-?mail|인증번호|성별|gender|sex", re.I)
 
 
@@ -179,7 +188,8 @@ def clean_events(evs: list[dict], navs: list[tuple[float, str]]) -> list[dict]:
             if out and out[-1]["action"] == "클릭" and out[-1]["sel"] == _best_selector(e) and e["t"] - out[-1]["t"] < 600:
                 continue                                     # 두 번 누르기
             out.append(dict(action="클릭", t=e["t"], url=e["url"], heading=e["heading"], sel=_best_selector(e),
-                            cands=e["sel"], name=_target_name(e), kind="링크" if e["tag"] == "a" else "버튼", box=e["box"]))
+                            cands=e["sel"], name=_target_name(e), kind="링크" if e["tag"] == "a" else "버튼", box=e["box"],
+                            hover=e.get("hover", "")))
         elif kind == "input":
             sel = _best_selector(e)
             if out and out[-1]["action"] == "입력" and out[-1]["sel"] == sel:
@@ -187,6 +197,7 @@ def clean_events(evs: list[dict], navs: list[tuple[float, str]]) -> list[dict]:
                 continue
             out.append(dict(action="입력", t=e["t"], url=e["url"], heading=e["heading"], sel=sel, cands=e["sel"],
                             name=_target_name(e), value=e["value"], secret=e.get("secret", False), box=e["box"],
+                            verify=bool(VERIFY.search(" ".join([e["label"], e["name"], e["placeholder"]]))),
                             private=bool(PRIVATE.search(" ".join([e["label"], e["name"], e["placeholder"], e["type"]])))))
         elif kind == "select":
             out.append(dict(action="선택", t=e["t"], url=e["url"], heading=e["heading"], name=_target_name(e),
@@ -305,19 +316,23 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
         intro[0] = b.greeting                               # 브랜드 고정 인사말
     tone = tone or b.tone
     out_scenes = []
-    privacy, block_from = [], ""
+    privacy = []
     for i, s in enumerate(scenes):
         key = f"S{i + 1}"
         d = {"키": key, "단계": step_of[i]}
         act = s["action"]
+        d["화면주소"] = s["url"]
         if act in ("클릭", "체크"):
             d.update(동작=act, 대상=s["name"], 누를곳=s["sel"])
+            if s.get("hover"):
+                d["먼저올리기"] = s["hover"]
             line = T.scene_line(act, s["name"], kind=s.get("kind", ""), first=i == 0, last=i == len(scenes) - 1, tone=tone)
             nxt = scenes[i + 1] if i + 1 < len(scenes) else None
             if nxt and not _same_page(nxt["url"], s["url"]):
                 d["다음주소"] = "**" + (urlparse(nxt["url"]).path or "/")
         elif act == "입력":
-            val = "@보관함" if s["secret"] else s["value"]
+            # 비밀번호는 보관함, 인증번호·보안문자는 녹화할 때 사람에게 묻기
+            val = "@보관함" if s["secret"] else f"@물어보기:{T.josa(s['name'], '을/를')} 적어 주세요" if s.get("verify") else s["value"]
             d.update(동작="입력", 대상=s["name"], 칸=[{"누를곳": s["sel"], "값": val}])
             if s.get("button"):
                 d["버튼"] = s["button"]
@@ -325,8 +340,6 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
             line = T.scene_line("입력", s["name"], button=s.get("button_name", ""), first=i == 0, tone=tone)
             if s.get("private") or s["secret"]:
                 privacy.append(s["sel"])
-            if not block_from:
-                block_from = urlparse(s["url"]).path
         else:   # 선택
             d.update(동작="선택", 대상=s["name"], 목록=s["picks"])
             line = T.scene_line("선택", s["name"], first=i == 0, tone=tone)
@@ -342,9 +355,84 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
         sc["다음편"] = next_topic
     if privacy:
         sc["개인정보칸"] = sorted(set(privacy), key=privacy.index)
-    if block_from and block_from != "/":
-        sc["요청차단"] = block_from                          # 입력이 시작되는 화면부터 저장·발송 요청 차단
+    blk = block_pages(scenes)
+    if blk:
+        sc["요청차단"] = blk                                  # 정보를 적는 화면은 모두 저장·발송 차단(로그인 화면만 빼고)
     return sc
+
+
+def block_pages(scenes: list[dict]) -> list[str]:
+    """저장·발송을 막을 화면들: 무언가 적거나 고르거나 체크하는 화면 전부.
+    로그인 화면(비밀번호 칸 하나 + 칸 3개 이하)만 뺀다 — 로그인은 실제로 돼야 하므로.
+    회원가입처럼 비밀번호 확인이 있거나 칸이 많은 화면은 막는다."""
+    pages: dict[str, list[dict]] = {}
+    for s in scenes:
+        if s["action"] in ("입력", "선택", "체크"):
+            pages.setdefault(urlparse(s["url"]).path or "/", []).append(s)
+    out = []
+    for path, ss in pages.items():
+        n_inputs = sum(1 for s in ss if s["action"] == "입력")
+        n_secret = sum(1 for s in ss if s.get("secret"))
+        if n_secret == 1 and n_inputs <= 3 and len(ss) <= 3:
+            continue                                         # 로그인 화면
+        out.append(path)
+    return out
+
+
+def set_start_state(d: dict, state: str) -> dict:
+    """시작 화면 바꾸기. '로그인': 비밀번호를 적고 들어가는 데까지를 '미리하기'로 옮겨 녹화하지 않는다.
+    '로그아웃': 미리하기를 다시 앞에 붙인다."""
+    d = dict(d)
+    if state == "로그인" and d.get("시작상태") != "로그인":
+        sc = list(d["장면"])
+        pw = next((i for i, s in enumerate(sc) for f in s.get("칸") or [] if str(f.get("값", "")).startswith("@보관함")), None)
+        if pw is None:
+            raise ValueError("로그인 장면(비밀번호 칸)을 찾지 못했어요. 로그인부터 한 번 해 보여 주세요.")
+        end = pw if sc[pw].get("버튼") else next((i for i in range(pw + 1, len(sc)) if sc[i]["동작"] == "클릭"), None)
+        if end is None or end + 1 >= len(sc):
+            raise ValueError("로그인 뒤에 보여 줄 장면이 없어요.")
+        pre, rest = sc[:end + 1], sc[end + 1:]
+        d["미리하기"] = [dict(x, 키=f"P{i + 1}") for i, x in enumerate(pre)]
+        d["장면"] = _renumber(rest, d)
+        d["로그인주소"] = d["주소"]
+        # 녹화를 시작할 화면: 남은 장면 중 화면 주소가 있는 첫 장면, 없으면 로그인 버튼이 넘어간 화면
+        start = next((x["화면주소"] for x in rest if x.get("화면주소")), "")
+        if not start and pre[-1].get("다음주소"):
+            u = urlparse(d["주소"])
+            start = f"{u.scheme}://{u.netloc}{pre[-1]['다음주소'].lstrip('*')}"
+        d["주소"] = start or d["주소"]
+        d["시작상태"] = "로그인"
+        _update_counts(d)
+    elif state == "로그아웃" and d.get("시작상태") == "로그인":
+        pre = [dict(s, 단계=1, 키=f"L{i + 1}") for i, s in enumerate(d.pop("미리하기", []))]
+        d["장면"] = pre + [dict(s, 단계=s["단계"] + 1) for s in d["장면"]]
+        d["단계이름"] = ["로그인하기"] + list(d.get("단계이름") or [])
+        d["주소"] = d.pop("로그인주소", d["주소"])
+        d["시작상태"] = "로그아웃"
+        _update_counts(d)
+    return d
+
+
+def _update_counts(d: dict) -> None:
+    """단계 수가 바뀌면 제목 '[N단계]' 와 인트로·아웃트로의 'N 단계' 도 바꾼다."""
+    n = len(d.get("단계이름") or [])
+    d["제목"] = re.sub(r"\[\d+단계\]", f"[{n}단계]", d["제목"])
+    words = "|".join(w for w in T.COUNT if w) + r"|\d+"
+    for key in ("인트로", "아웃트로"):
+        for ln in d.get(key) or []:
+            ln["말"] = re.sub(rf"({words}) 단계", f"{T.count_word(n)} 단계", ln["말"])
+
+
+def _renumber(scenes: list[dict], d: dict) -> list[dict]:
+    """남은 장면의 단계를 1부터 다시 매기고 단계 이름도 맞춘다."""
+    used = sorted({s["단계"] for s in scenes})
+    names = list(d.get("단계이름") or [])
+    d["단계이름"] = [names[u - 1] if 0 < u <= len(names) else f"{i + 1}단계" for i, u in enumerate(used)]
+    m = {u: i + 1 for i, u in enumerate(used)}
+    out = [dict(s, 단계=m[s["단계"]]) for s in scenes]
+    for i, s in enumerate(out):
+        s["키"] = f"S{i + 1}"
+    return out
 
 
 def save(sc: dict, path: Path) -> Path:

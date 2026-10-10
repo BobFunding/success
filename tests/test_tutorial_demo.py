@@ -80,6 +80,44 @@ def test_build_scenario_never_stores_passwords():
     sc = build_scenario("http://s/", evs, [(500, "http://s/join")], topic="회원가입 방법")
     pw = sc["장면"][1]
     assert pw["칸"][0]["값"] == "@보관함" and "#pw" in sc["개인정보칸"]
-    assert sc["요청차단"] == "/join"
+    assert "요청차단" not in sc                    # 비밀번호 칸 하나뿐인 화면 = 로그인 화면은 막지 않음(로그인은 돼야 함)
     assert sc["장면"][0]["다음주소"] == "**/join"
     assert sc["제목"].endswith("면 끝!") and sc["인트로"][1]["말"].startswith("오늘은 회원가입 방법을")
+
+
+def test_block_pages_signup_vs_login():
+    from autoedit.tutorial.demo_record import block_pages
+    mk = lambda url, act="입력", secret=False: {"action": act, "url": url, "secret": secret}
+    login = [mk("http://s/login"), mk("http://s/login", secret=True)]
+    signup = [mk("http://s/join"), mk("http://s/join", secret=True), mk("http://s/join", secret=True), mk("http://s/join", "체크")]
+    form = [mk("http://s/member/new"), mk("http://s/member/new")]
+    assert block_pages(login + form) == ["/member/new"]
+    assert block_pages(signup) == ["/join"]          # 비밀번호 확인이 있으면 회원가입 → 막음
+
+
+def test_verify_code_is_asked_and_menu_hover_kept():
+    evs = [_ev("click", 0, url="http://s/admin", tag="a", text="회원 등록", sel=["a:has-text('회원 등록')"], hover="a:has-text('회원 관리')"),
+           _ev("input", 1000, url="http://s/new", tag="input", type="text", sel=["#code"], label="인증번호", value="482913")]
+    sc = build_scenario("http://s/admin", evs, [(500, "http://s/new")], topic="회원 등록")
+    assert sc["장면"][0]["먼저올리기"] == "a:has-text('회원 관리')"
+    assert sc["장면"][1]["칸"][0]["값"].startswith("@물어보기:인증번호")
+    assert sc["장면"][1]["화면주소"] == "http://s/new"
+
+
+def test_set_start_state_moves_login_to_pre_steps():
+    from autoedit.tutorial.demo_record import set_start_state
+    d = {"제목": "x, [3단계]면 끝!", "주소": "http://s/login", "단계이름": ["로그인", "메뉴", "등록"],
+         "인트로": [{"키": "I1", "말": "안녕"}, {"키": "I2", "말": "오늘은 x 방법을, 세 단계로 알려 드릴게요."}],
+         "아웃트로": [{"키": "O1", "말": "오늘 배운 세 단계, 기억하시죠?"}, {"키": "O2", "말": "끝"}],
+         "장면": [{"키": "S1", "단계": 1, "동작": "입력", "대상": "아이디", "칸": [{"누를곳": "#id", "값": "a"}], "말": "a"},
+                {"키": "S2", "단계": 1, "동작": "입력", "대상": "비밀번호", "칸": [{"누를곳": "#pw", "값": "@보관함"}], "말": "b"},
+                {"키": "S3", "단계": 1, "동작": "클릭", "대상": "로그인", "누를곳": "#go", "말": "c"},
+                {"키": "S4", "단계": 2, "동작": "클릭", "대상": "회원 관리", "누를곳": "#m", "말": "d", "화면주소": "http://s/admin"},
+                {"키": "S5", "단계": 3, "동작": "클릭", "대상": "저장", "누를곳": "#s", "말": "e"}]}
+    a = set_start_state(d, "로그인")
+    assert [x["키"] for x in a["미리하기"]] == ["P1", "P2", "P3"] and len(a["장면"]) == 2
+    assert a["주소"] == "http://s/admin" and a["로그인주소"] == "http://s/login"
+    assert a["단계이름"] == ["메뉴", "등록"] and [x["단계"] for x in a["장면"]] == [1, 2]
+    assert a["제목"] == "x, [2단계]면 끝!" and "두 단계" in a["인트로"][1]["말"] and "두 단계" in a["아웃트로"][0]["말"]
+    b = set_start_state(a, "로그아웃")
+    assert len(b["장면"]) == 5 and b["주소"] == "http://s/login" and "세 단계" in b["인트로"][1]["말"]
