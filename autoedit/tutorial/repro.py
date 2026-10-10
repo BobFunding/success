@@ -196,6 +196,8 @@ def main(work: Path, only=None) -> bool:
     stages = only or ("프로그램", "기준", "같은녹화", "비교")   # 프로그램과 기준을 이어서(같은 때) 찍는다
     # 녹화 둘을 연달아(같은 때) 찍고 나서 편집한다 — 컴퓨터 빠르기 차이가 섞이지 않게
     if "프로그램" in stages:            # 목소리를 먼저 만들어 기준과 함께 쓴다
+        for k in ("cap.mkv.key",):         # 지난 녹화를 다시 쓰면 '같은 때' 찍은 것이 아니게 됨 → 매번 새로 녹화
+            (work / "engine" / k).unlink(missing_ok=True)
         stage_engine(work, sc, ("목소리", "리허설", "녹화"))
     if "기준" in stages:
         stage_base(work, sc)
