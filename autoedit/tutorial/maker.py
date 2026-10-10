@@ -118,5 +118,10 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
         result["warnings"] = warn + R.warnings(sc, rules, result["total"])
         if check and not preview:
             stage("자동 검수", est)
-            result["qa"] = qa.review(sc, work, result, log)
+            try:
+                result["qa"] = qa.review(sc, work, result, log)
+            except Exception as e:                       # 검수가 실패해도 영상은 이미 완성 — 만들기는 성공
+                log(f"[검수] 자동 검수를 끝내지 못했어요({type(e).__name__}: {e}). 영상은 그대로 쓸 수 있어요.")
+                result["qa"] = {"판정": "warn", "사진": "", "항목": [
+                    {"이름": "자동 검수", "판정": "warn", "내용": f"건너뜀: {type(e).__name__}"}]}
     return result

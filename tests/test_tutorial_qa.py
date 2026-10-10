@@ -71,3 +71,17 @@ def test_demo_drops_popup_close_clicks():
            _ev("click", 200, tag="a", text="회원가입", sel=["#c"])]
     out = clean_events(evs, [])
     assert [o["name"] for o in out] == ["회원가입"]
+
+
+def test_missing_part_is_skipped_not_fatal():
+    """부품(Pillow 등)이 없으면 그 검사만 '건너뜀'으로 — 만들기는 성공."""
+    from autoedit.tutorial import qa
+
+    def needs_pil():
+        raise ModuleNotFoundError("No module named 'PIL'", name="PIL")
+    logs = []
+    r = qa._safe("주소창·테두리·배율", needs_pil, log=logs.append)
+    assert r["판정"] == "warn" and "PIL" in r["내용"] and logs
+    a, b = qa._safe("개인정보 최종 검사 (글자 인식) / 의도치 않은 오류 메시지", needs_pil, log=logs.append, n=2)
+    assert a["이름"].startswith("개인정보") and b["이름"] == "의도치 않은 오류 메시지" and b["판정"] == "warn"
+    assert qa._safe("x", lambda: {"판정": "ok"}) == {"판정": "ok"}

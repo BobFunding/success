@@ -256,6 +256,19 @@ def check_ocr(sc: Scenario, final: Path, interval: float = 1.5, log=print) -> tu
     return a, b
 
 
+def _safe(name: str, fn, *a, log=print, n: int = 1):
+    """검사 하나가 부품이 없거나 실패해도 만들기는 성공으로 끝낸다 — 그 검사만 'warn: 건너뜀'."""
+    try:
+        return fn(*a)
+    except ModuleNotFoundError as e:
+        msg = f"부품({e.name})이 없어 건너뛰었어요. setup 을 다시 실행하면 설치돼요."
+    except Exception as e:
+        msg = f"확인하지 못해 건너뛰었어요({type(e).__name__})."
+    log(f"[검수] {name}: {msg}")
+    r = {"이름": name, "판정": "warn", "내용": msg}
+    return r if n == 1 else tuple(dict(r, 이름=x) for x in name.split(" / "))
+
+
 def scene_sheet(sc: Scenario, final: Path, times: list[tuple[int, float]], out: Path) -> None:
     """장면별 사진 한 장으로 모아 보기."""
     from PIL import Image, ImageDraw
@@ -285,11 +298,15 @@ def review(sc: Scenario, work: Path, result: dict, log=print, ocr: bool = True) 
     trim0 = rec["marks"]["body_start"] + off - 0.2
     starts = {ln["key"]: ln["t"] for ln in rec["lines"]}
     body_t = lambda k: (starts[k] + off - trim0) if k in starts else None
-    items = [check_frame(work, rec, off), check_spots(rec), check_timing(sc, rec, dur),
-             check_subs(sc, work, nar, result["intro"], body_t), check_length(final)]
+    items = [_safe("주소창·테두리·배율", check_frame, work, rec, off, log=log),
+             _safe("밝게 하기·클릭 효과 위치", check_spots, rec, log=log),
+             _safe("나레이션과 클릭 시각", check_timing, sc, rec, dur, log=log),
+             _safe("자막·단계 표시", check_subs, sc, work, nar, result["intro"], body_t, log=log),
+             _safe("영상·소리 길이", check_length, final, log=log)]
     if ocr:
         log("[검수] 완성 영상 글자 인식 중…")
-        a, b = check_ocr(sc, final, log=log)
+        a, b = _safe("개인정보 최종 검사 (글자 인식) / 의도치 않은 오류 메시지",
+                     lambda: check_ocr(sc, final, log=log), log=log, n=2)
         items += [a, b]
     pron = work / "pronunciation.json"
     if pron.exists():
@@ -307,9 +324,11 @@ def review(sc: Scenario, work: Path, result: dict, log=print, ocr: bool = True) 
         cl = [c["t"] for c in rec["clicks"] if starts[s.key] <= c["t"] <= starts[s.key] + dur[s.key] + 1]
         tt = (cl[-1] + off - trim0) if cl else t + 1.5
         times.append((s.no, result["intro"] + tt))
-    scene_sheet(sc, final, times, work / "qa_scenes.jpg")
+    sheet = _safe("장면별 사진", scene_sheet, sc, final, times, work / "qa_scenes.jpg", log=log)
+    if isinstance(sheet, dict):
+        items.append(sheet)
     worst = "fail" if any(i["판정"] == "fail" for i in items) else "warn" if any(i["판정"] == "warn" for i in items) else "ok"
-    res = {"판정": worst, "항목": items, "사진": str(work / "qa_scenes.jpg")}
+    res = {"판정": worst, "항목": items, "사진": str(work / "qa_scenes.jpg") if (work / "qa_scenes.jpg").exists() else ""}
     (work / "qa.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
     log(f"[검수] {sum(i['판정'] == 'ok' for i in items)}/{len(items)} 통과")
     return res

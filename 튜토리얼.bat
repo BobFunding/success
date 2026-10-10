@@ -6,7 +6,7 @@ set PYTHONIOENCODING=utf-8
 set "VPY=.venv\Scripts\python.exe"
 if not exist "%VPY%" goto :nosetup
 rem 튜토리얼 메이커 부품이 없으면 한 번만 설치 (setup.bat 을 예전에 돌린 PC)
-"%VPY%" -c "import playwright, edge_tts, yaml, resvg_py" > nul 2>&1
+"%VPY%" -c "import playwright, edge_tts, yaml, resvg_py, PIL" > nul 2>&1
 if errorlevel 1 goto :install
 :run
 echo 튜토리얼 메이커를 여는 중입니다. 브라우저에 화면이 뜹니다.

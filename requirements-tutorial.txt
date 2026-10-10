@@ -3,6 +3,7 @@ playwright
 edge-tts
 pyyaml
 numpy
+pillow
 opencv-python-headless
 resvg-py
 certifi
