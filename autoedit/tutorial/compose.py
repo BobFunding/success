@@ -75,7 +75,19 @@ class Composer:
         png = render_svg(svg, W, H)
         return cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
 
-    def logo_layer(self, y: int, scale: float = 1.45) -> np.ndarray:
+    def logo_layer(self, y: int, scale: float = 1.45) -> np.ndarray | None:
+        """흰 카드 위 로고. 로고가 없으면 브랜드 이름 글자 카드, 이름도 없으면 None."""
+        if not self.sc.brand.logo:
+            name = self.sc.brand.name
+            if not name:
+                return None
+            fs = int(64 * scale / 1.45)
+            bw, bh = int(len(name) * fs * 0.95) + 120, int(fs * 1.6) + 40
+            x0 = (W - bw) // 2
+            return self.svg_layer(f'<rect x="{x0}" y="{y + 10}" width="{bw}" height="{bh}" rx="28" fill="#000" opacity="0.15"/>'
+                                  f'<rect x="{x0}" y="{y}" width="{bw}" height="{bh}" rx="28" fill="#ffffff"/>'
+                                  f'<text x="{W / 2}" y="{y + bh / 2 + fs * 0.36}" text-anchor="middle" font-family="{self.FONT}" '
+                                  f'font-weight="900" font-size="{fs}" fill="#1B2559">{_esc(name)}</text>')
         lg = cv2.imread(self.sc.brand.logo, cv2.IMREAD_UNCHANGED)
         lg = cv2.resize(lg, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC).astype(np.float32) / 255.0
         lh, lw = lg.shape[:2]
@@ -108,25 +120,42 @@ class Composer:
                 f'font-size="104" fill="#ffffff">{t}</text>')
 
     def animate(self, out: Path, dur: float, layers: list[tuple[np.ndarray, float]]):
-        """layers: (RGBA 레이어, 나타나는 시각). 0.45초 동안 페이드 + 아래에서 살짝 올라옴."""
+        """layers: (RGBA 레이어, 나타나는 시각). 0.45초 동안 페이드 + 아래에서 살짝 올라옴.
+        결과는 1편과 픽셀까지 같게 두고 빠르게만 했다: 레이어의 보이는 줄만 섞고, 움직임이 없는 프레임은 앞 프레임을 그대로 쓴다."""
         bg = _background(W, H, ScreenFxSettings(background=self.BG)).astype(np.float32) / 255.0
+        spans = []
+        for lay, _ in layers:                      # 알파가 있는 줄 범위 (그 밖은 섞어도 그대로라 건너뜀)
+            rows = np.where(lay[..., 3].max(1) > 0)[0]
+            spans.append((int(rows[0]), int(rows[-1]) + 1) if len(rows) else None)
         proc = subprocess.Popen([FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
                                  "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
                                  "-pix_fmt", "yuv420p", str(out)], stdin=subprocess.PIPE)
+        prev_key, prev = None, b""
         for fi in range(int(dur * FPS)):
             t = fi / FPS
+            ps = [ease((t - t_in) / 0.45) for _, t_in in layers]
+            k = min(1.0, (dur - t) / 0.3)            # 끝 0.3초 페이드 아웃(장면 전환)
+            key = (tuple(ps), k)
+            if key == prev_key:
+                proc.stdin.write(prev)
+                continue
             img = bg.copy()
-            for lay, t_in in layers:
-                p = ease((t - t_in) / 0.45)
-                if p <= 0:
+            for (lay, _), p, sp in zip(layers, ps, spans):
+                if p <= 0 or sp is None:
                     continue
                 dy = int((1 - p) * 30)
-                L = np.roll(lay, dy, axis=0) if dy else lay
-                a = L[..., 3:4] * p
-                img = img * (1 - a) + L[..., :3] * a
-            k = min(1.0, (dur - t) / 0.3)            # 끝 0.3초 페이드 아웃(장면 전환)
+                y0, y1 = sp
+                if y0 >= dy and y1 + dy <= H:      # 위아래로 넘치지 않으면 보이는 줄만
+                    L = lay[y0 - dy:y1]
+                    a = L[..., 3:4] * p
+                    img[y0:y1 + dy] = img[y0:y1 + dy] * (1 - a) + L[..., :3] * a
+                else:
+                    L = np.roll(lay, dy, axis=0) if dy else lay
+                    a = L[..., 3:4] * p
+                    img = img * (1 - a) + L[..., :3] * a
             img = img * k + bg * (1 - k) if k < 1 else img
-            proc.stdin.write((img * 255).astype(np.uint8).tobytes())
+            prev_key, prev = key, (img * 255).astype(np.uint8).tobytes()
+            proc.stdin.write(prev)
         proc.stdin.close(); proc.wait()
 
     def card_row(self):
@@ -173,6 +202,7 @@ class Composer:
         n = len(self.STEPS)
         if not (work / "intro.mp4").exists():
             layers = [(self.logo_layer(330), 0.15), (self.svg_layer(self.title_svg()), 0.6)]
+            layers = [l for l in layers if l[0] is not None]
             layers += [(self.svg_layer(self.step_card(i, cx[i], cy, cw, chh)), I2 + 1.2 + i * 0.9) for i in range(n)]
             self.animate(work / "intro.mp4", INTRO_LEN, layers)
         O1 = 0.5
@@ -191,6 +221,7 @@ class Composer:
                                      f'font-size="58" fill="#ffffff">다음 편 ▶ {_esc(sc.next_episode)}</text>')
                 layers += [(nxt, O2)]
             layers += [(self.logo_layer(1060, 1.1), O2 + 0.6)]
+            layers = [l for l in layers if l[0] is not None]
             self.animate(work / "outro.mp4", OUTRO_LEN, layers)
 
         # 3) 자막·단계 표시·말풍선 (ASS) + srt

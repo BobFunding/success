@@ -25,12 +25,28 @@ def narrate(sc: Scenario, work: Path, log=print) -> dict:
     return nar
 
 
+def rehearse(sc: Scenario, work: Path, dur: dict, log=print) -> dict:
+    """리허설(창 없이, 녹화 없이). 결과를 rehearsal.json 에 남긴다 — 화면은 이걸 읽어 그 장면 줄을 빨갛게 표시한다."""
+    from .recorder import SceneError
+    res = {"ok": True, "장면수": len(sc.scenes)}
+    try:
+        Recorder(sc, dur, log).run("dry", work)
+    except SceneError as e:
+        s = e.scene
+        res = {"ok": False, "장면": s.no, "키": s.key, "대상": s.label or s.target, "말": s.line.text,
+               "메시지": str(e), "사진": str(work / "last_dry.png")}
+        raise
+    finally:
+        (work / "rehearsal.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    return res
+
+
 def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print) -> dict:
     work.mkdir(parents=True, exist_ok=True)
     nar = narrate(sc, work, log) if "목소리" in stages else json.loads((work / "narration.json").read_text(encoding="utf-8"))
     dur = {k: v[2] for k, v in nar.items()}
     if "리허설" in stages:
-        Recorder(sc, dur, log).run("dry", work)
+        rehearse(sc, work, dur, log)
     if "녹화" in stages:
         rec = Recorder(sc, dur, log).run("rec", work)
         off = find_sync(work / "cap.mkv", rec["marks"]["sync"])

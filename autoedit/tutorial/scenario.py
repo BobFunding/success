@@ -40,9 +40,10 @@ class Field:
 @dataclass
 class Pick:
     """선택 장면의 목록 하나: 몇 번째 선택 상자에서 몇 번째 항목(또는 글자)."""
-    box: int
+    box: int = -1                # 선택 상자(div[role=combobox]) 번호 — MUI 처럼 직접 만든 목록
     index: int | None = None
     text: str | None = None
+    target: str = ""             # 기본 <select> 의 누를 곳 (이때는 text 로 고름)
 
 
 @dataclass
@@ -159,7 +160,10 @@ def _scene(i: int, d: dict, gap: float) -> Scene:
                                    _num(f.get("간격"), 0.09), _num(f.get("다가가기"), -150), _num(f.get("이동"), 0.5)))
     if act == "선택":
         for p in d.get("목록") or []:
-            sc.picks.append(Pick(int(p["상자"]), p.get("항목번호"), p.get("항목")))
+            if p.get("누를곳"):
+                sc.picks.append(Pick(text=str(p.get("항목", "")), index=p.get("항목번호"), target=str(p["누를곳"])))
+            else:
+                sc.picks.append(Pick(int(p["상자"]), p.get("항목번호"), p.get("항목")))
         if not sc.picks:
             raise ScenarioError(f"{where}(선택)에 고를 목록이 없어요.")
     if act == "스크롤":

@@ -9,6 +9,7 @@ mode="rec": 녹화
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 import time
 from pathlib import Path
@@ -49,14 +50,24 @@ def style_script(css: str) -> str:
             % json.dumps(css))
 
 
+def is_selector(s: str) -> bool:
+    """'button:has-text(...)', 'input[name=id]', '#id', 'text="..."', 'css=...' 는 선택자, '로그인(관장)' 같은 건 보이는 글자."""
+    return bool(re.search(r"[\[\]#=>'\"]|^(css|text|xpath|internal):|^[a-z]+(\.[\w-]+)+$|:has|:nth|^[a-z]+$", s))
+
+
 class SceneError(RuntimeError):
     """사람이 읽는 오류: 몇 번 장면의 무엇을 못 찾았는지."""
 
     def __init__(self, scene: Scene, what: str, detail: str = ""):
         self.scene = scene
+        self.detail = detail
         name = scene.label or what
-        super().__init__(f"{scene.no}번 장면의 '{name}'을(를) 찾지 못했어요. 화면 글자가 바뀌었는지 확인해 주세요."
-                         + (f" ({detail})" if detail else ""))
+        if detail and ("않았어요" in detail or "없어요" in detail):
+            msg = f"{scene.no}번 장면 '{name}': {detail}."
+        else:
+            msg = (f"{scene.no}번 장면의 '{name}'을(를) 찾지 못했어요. 화면 글자가 바뀌었는지 확인해 주세요."
+                   + (f" ({detail})" if re.search("[가-힣]", detail) else ""))   # 기술 용어(오류 이름)는 보여 주지 않음
+        super().__init__(msg)
 
 
 class Recorder:
@@ -70,6 +81,7 @@ class Recorder:
         self.pg = None
         self.scene: Scene | None = None
         self.blocking = False
+        self.mode = "dry"
 
     def block_requests(self) -> None:
         """저장·발송 요청(xhr/fetch) 차단을 켠다(안전 규칙). 차단 주소 화면에서만 막는다.
@@ -103,13 +115,34 @@ class Recorder:
         self.log["clicks"].append({"t": round(self.now(), 3), "x": self.pos[0] * SCALE, "y": self.pos[1] * SCALE})
         self.pg.mouse.down(); time.sleep(0.07); self.pg.mouse.up()
 
+    def locate(self, target: str):
+        """누를 곳 찾기: 선택자면 그대로, 보이는 글자면 버튼 → 링크 → 라벨 → 안내 글씨 → 글자 순서로."""
+        if is_selector(target):
+            return self.pg.locator(target).first
+        pg = self.pg
+        for loc in (pg.get_by_role("button", name=target, exact=True), pg.get_by_role("link", name=target, exact=True),
+                    pg.get_by_label(target, exact=True), pg.get_by_placeholder(target, exact=True),
+                    pg.get_by_text(target, exact=True)):
+            try:
+                if loc.count():
+                    return loc.first
+            except Exception:
+                pass
+        return pg.get_by_text(target).first
+
     def box(self, sel: str, what: str = "") -> dict:
+        b, err = None, ""
         try:
-            b = self.pg.locator(sel).first.bounding_box(timeout=10000)
+            b = self.locate(sel).bounding_box(timeout=10000)
         except Exception as e:                       # 시간 초과 등
-            raise SceneError(self.scene, what or sel, type(e).__name__) from None
+            err = type(e).__name__
+        if not b and self.scene and self.scene.label and self.scene.label != sel and what == self.scene.label:
+            try:                                     # 선택자가 바뀐 사이트: 보이는 글자로 한 번 더
+                b = self.locate(self.scene.label).bounding_box(timeout=3000)
+            except Exception:
+                pass
         if not b:
-            raise SceneError(self.scene, what or sel, "화면에 보이지 않음")
+            raise SceneError(self.scene, what or sel, err or "화면에 보이지 않음")
         return b
 
     def center(self, sel: str, what: str = ""):
@@ -139,14 +172,23 @@ class Recorder:
                          [y, sec * 1000])
 
     def typ(self, sel, text, delay):
-        try:
-            self.pg.locator(sel).first.click(timeout=10000)
-        except Exception as e:
-            raise SceneError(self.scene, sel, type(e).__name__) from None
+        """커서가 있는 자리에서 칸을 누르고 한 글자씩 적는다.
+        (1편은 locator.click 이라 실제 마우스가 칸 가운데로 옮겨져 그려 둔 커서가 순간 이동했다 — 2026-10-10 사용자 승인으로 고침)"""
+        loc = self.locate(sel)
+        b = self.box(sel)
+        x, y = self.pos
+        if not (b["x"] + 4 <= x <= b["x"] + b["width"] - 4 and b["y"] + 4 <= y <= b["y"] + b["height"] - 4):
+            # 커서가 칸 밖이면 칸 안쪽 가장 가까운 곳으로 살짝 옮긴다
+            self.glide(min(max(x, b["x"] + 12), b["x"] + b["width"] - 12), b["y"] + b["height"] / 2, 0.15)
         self.log["clicks"].append({"t": round(self.now(), 3), "x": self.pos[0] * SCALE, "y": self.pos[1] * SCALE})
+        self.pg.mouse.down(); self.pg.mouse.up()
+        if not loc.evaluate("e => e === document.activeElement || e.contains(document.activeElement)"):
+            loc.focus()                              # 다른 것이 덮고 있어 클릭이 안 먹으면 직접 맞춘다
         for ch in text:
             self.pg.keyboard.type(ch)
             time.sleep(delay)
+        if self.mode == "dry" and text and not loc.input_value():   # 사이트가 모양을 바꿔 넣을 수 있어 비었는지만 본다
+            raise SceneError(self.scene, sel, "적은 글자가 칸에 들어가지 않았어요")
 
     def pick(self, box_idx, option_idx=None, option_text=None):
         """선택 상자: 열고 → 항목 클릭."""
@@ -161,6 +203,22 @@ class Recorder:
         opt.scroll_into_view_if_needed()
         ob = opt.bounding_box()
         self.glide(ob["x"] + min(60, ob["width"] / 2), ob["y"] + ob["height"] / 2, 0.3); self.click()
+        time.sleep(0.3)
+
+    def pick_native(self, p) -> None:
+        """기본 <select>: 상자로 가서 누르고 항목을 고른다(펼친 목록은 운영체제가 그려서 바로 고름)."""
+        x, y, _ = self.center(p.target, self.scene.label if self.scene else "")
+        self.glide(x, y, 0.45); self.click()
+        loc = self.locate(p.target)
+        time.sleep(0.25)
+        try:
+            if p.text:
+                loc.select_option(label=p.text, timeout=5000)
+            else:
+                loc.select_option(index=int(p.index or 0), timeout=5000)
+        except Exception:
+            raise SceneError(self.scene, p.text or p.target, "목록에 그 항목이 없어요") from None
+        self.pg.keyboard.press("Escape")
         time.sleep(0.3)
 
     # ── 장면 ──
@@ -193,7 +251,11 @@ class Recorder:
             if s0 is None:
                 s0 = self.now()
             self.glide(x + f.approach, y, f.move)
-            self.typ(f.target, f.value, f.delay)
+            value = f.value
+            if value.startswith("@보관함"):              # 비밀번호: 장면 표에는 없고 PC 안 보관함에서
+                from . import secrets
+                value = secrets.get(self.sc.file_name)
+            self.typ(f.target, value, f.delay)
             boxes.append(b)
         if s.button:
             x2, y2, b2 = self.center(s.button, s.label)
@@ -207,10 +269,14 @@ class Recorder:
             self.scroll_to(*s.scroll_first)
         s0 = self.now()
         combos = self.pg.locator("div[role=combobox]")
-        first = combos.nth(s.picks[0].box).bounding_box()
+        where = lambda p: self.box(p.target, s.label) if p.target else combos.nth(p.box).bounding_box()
+        first = where(s.picks[0])
         for p in s.picks:
-            self.pick(p.box, p.index, p.text)
-        last = combos.nth(s.picks[-1].box).bounding_box()
+            if p.target:
+                self.pick_native(p)
+            else:
+                self.pick(p.box, p.index, p.text)
+        last = where(s.picks[-1])
         hold = s.spot_hold if s.spot_hold is not None else 0.3
         self.spot(self._union([first, last], s), s0, self.now() + hold, s.spot_pad)
 
@@ -236,13 +302,18 @@ class Recorder:
             self.mark(f"bubble_{s.key}")
         if s.action in ("클릭", "체크"):
             self.do_click(s, end)
-            if s.next_url:
-                self.pg.wait_for_url(s.next_url, timeout=15000)
-                if not s.wait_for:
-                    self.pg.wait_for_load_state("networkidle")
-            if s.wait_for:
-                self.pg.wait_for_selector(s.wait_for)
-                time.sleep(0.4)
+            try:
+                if s.next_url:
+                    self.pg.wait_for_url(s.next_url, timeout=15000)
+                    if not s.wait_for:
+                        self.pg.wait_for_load_state("networkidle")
+                if s.wait_for:
+                    self.pg.wait_for_selector(s.wait_for)
+                    time.sleep(0.4)
+            except SceneError:
+                raise
+            except Exception:
+                raise SceneError(s, s.label or s.target, "누른 뒤 다음 화면으로 넘어가지 않았어요") from None
         elif s.action == "입력":
             self.do_type(s, end)
         elif s.action == "선택":
@@ -282,6 +353,7 @@ class Recorder:
     # ── 실행 ──
     def run(self, mode: str, out_dir: Path) -> dict:
         from playwright.sync_api import sync_playwright
+        self.mode = mode
         out_dir.mkdir(parents=True, exist_ok=True)
         cap = None
         with sync_playwright() as p:
