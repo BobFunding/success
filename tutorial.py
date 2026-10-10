@@ -38,6 +38,11 @@ def main() -> int:
     r = sub.add_parser("repro", help="1편 재현 검사")
     r.add_argument("--work", default="output/repro")
     r.add_argument("--only", nargs="+", choices=("기준", "같은녹화", "프로그램", "비교"))
+    x = sub.add_parser("export", help="내보내기: 올릴 곳별 파일·글 + 규격 검사")
+    x.add_argument("scenario")
+    x.add_argument("--work")
+    x.add_argument("--to", nargs="+", default=["youtube", "web"], help="올릴 곳 (all 이면 14곳 전부)")
+    x.add_argument("--site", default="", help="링크 주소 (기본: 장면 표의 사이트)")
     a = ap.parse_args()
 
     if a.cmd == "ui":
@@ -68,6 +73,16 @@ def main() -> int:
     work = Path(a.work or f"output/tutorial/{sc.file_name}")
     from autoedit.tutorial.capture import CaptureUnavailable
     from autoedit.tutorial.recorder import SceneError
+    if a.cmd == "export":
+        from autoedit.tutorial.export import Exporter, load_platforms
+        dests = list(load_platforms()["올릴곳"]) if a.to == ["all"] else a.to
+        try:
+            rep = Exporter(sc, work, site=a.site).export(dests, on_stage=lambda n: print(f"── {n}"))
+        except ValueError as e:
+            print(e)
+            return 1
+        print(f"{'규격 검사 통과' if rep['판정'] == 'ok' else '확인이 필요해요'}: {rep['폴더']} (점검.md)")
+        return 0 if rep["판정"] == "ok" else 1
     try:
         if a.cmd == "check":
             maker.make(sc, work, stages=("목소리", "리허설"))

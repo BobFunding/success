@@ -130,3 +130,12 @@ def test_repro_compares_per_scene_timing_not_accumulated_drift():
     moved = log(0.0)
     moved["clicks"][0]["x"] = 40                                        # 누른 자리가 다름
     assert not compare_logs(log(0.0), moved)["ok"]
+
+
+def test_server_export_needs_destination(srv):
+    req = urllib.request.Request(srv + "/api/export", data=json.dumps({"path": str(EP1), "to": []}).encode(),
+                                 headers={"Content-Type": "application/json"})
+    d = json.loads(urllib.request.urlopen(req).read())
+    assert d["ok"] is False and "올릴 곳" in d["error"]
+    pl = SV.platforms_view()
+    assert len(pl) == 14 and {p["key"] for p in pl if p["default"]} == {"youtube", "web"}

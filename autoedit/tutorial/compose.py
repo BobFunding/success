@@ -325,6 +325,15 @@ class Composer:
         chap = [("인트로", 0)] + [(f"{i + 1}단계 {self.STEPS[i]}", INTRO_LEN + st[i]) for i in range(n)] + \
                [("마무리", INTRO_LEN + BODY_LEN)]
         (work / "챕터.txt").write_text("\n".join(f"{int(t // 60)}:{int(t % 60):02d} {c}" for c, t in chap), encoding="utf-8")
+        # 내보내기(세로·4:5·1:1·클립)가 쓰는 시간표 — 결과 영상에는 영향 없음
+        bubbles = [(tb(self.bubble_time(x.key)) + INTRO_LEN, DUR[x.key] + 0.6, x.bubble) for x in sc.scenes if x.bubble]
+        (work / "timeline.json").write_text(json.dumps({
+            "intro": INTRO_LEN, "body": BODY_LEN, "outro": OUTRO_LEN, "total": TOTAL,
+            "lines": [{"key": k, "t": round(t, 3), "dur": round(DUR[k] + 0.25, 3), "text": sub(k)} for k, t in placed],
+            "steps": [{"name": self.STEPS[i], "start": round(INTRO_LEN + st[i], 3), "end": round(INTRO_LEN + st[i + 1], 3)}
+                      for i in range(n)],
+            "bubbles": [{"t": round(a, 3), "dur": round(b, 3), "text": c} for a, b, c in bubbles],
+            "chapters": [{"name": c, "t": round(t, 3)} for c, t in chap]}, ensure_ascii=False, indent=1), encoding="utf-8")
         self.say(f"[편집] 완성: 인트로 {INTRO_LEN:.1f}s + 본편 {BODY_LEN:.1f}s + 아웃트로 {OUTRO_LEN:.1f}s = {TOTAL:.1f}s")
         # 표지(결과 화면·내보내기용): 인트로 제목이 다 보인 순간
         run("-ss", f"{min(INTRO_LEN - 0.5, I2 + 1.2 + n * 0.9):.2f}", "-i", str(final), "-frames:v", "1", "-q:v", "3",

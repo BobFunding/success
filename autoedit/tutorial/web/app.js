@@ -274,11 +274,37 @@ function viewResult() {
   ${chap.length ? `<details style="margin-top:var(--s2)"><summary>유튜브 챕터<span>설명란에 붙여 넣기</span></summary><div class="checks" style="flex-direction:column;align-items:flex-start"><pre style="margin:0;font-family:var(--body);line-height:1.7">${esc(chap.join("\n"))}</pre><button class="ghost" type="button" id="copyChap">복사</button></div></details>` : ""}
 </section>
 ${qaCard((r && r.qa) || S.proj.qa, "자동 검수")}
-<section class="card"><h2>어디에 올릴까요?</h2>
-  <p class="lead">올릴 곳을 고르면 파일과 글이 자동으로 준비되는 기능은 다음 업데이트에서 열려요. 지금은 위 파일을 그대로 올리시면 됩니다.</p>
-  <div class="verdict">✓ 유튜브에 바로 올릴 수 있는 규격(1440p 60fps, H.264, 자막 .srt, 챕터)으로 만들었어요.</div>
-</section>
+${exportCard()}
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button><button class="ghost" type="button" id="again">문장 고치고 다시 만들기</button></div>`;
+}
+
+// ── 내보내기: 올릴 곳 고르기 → 올릴 곳별 폴더 + 규격 검사 ──
+const EXP_CHIP = { ok: "ok", warn: "warn", fail: "warn", soon: "soon" };
+function exportPicked() {
+  const pl = S.proj.platforms || [];
+  return store.get("exportTo", pl.filter(p => p.default).map(p => p.key)).filter(k => pl.some(p => p.key === k));
+}
+function exportCard() {
+  const pl = S.proj.platforms || [], picked = exportPicked();
+  const j = S.job && S.job.kind === "export" ? S.job : null;
+  const rep = (j && !j.running && j.ok && j.result) || S.proj.export;
+  const run = j && j.running;
+  const chips = pl.map(p => `<label class="opt"><input type="checkbox" data-exp="${esc(p.key)}" ${picked.includes(p.key) ? "checked" : ""} ${run ? "disabled" : ""}>
+    <span>${esc(p.name)}<small>${esc(p.desc)}</small></span></label>`).join("");
+  const res = rep ? Object.entries(rep["올릴곳"]).map(([k, v]) => {
+    const bad = v["검사"].filter(r => r["판정"] === "fail" || r["판정"] === "warn");
+    return `<details><summary>${v["판정"] === "ok" ? "✓" : "⚠"} ${esc(v["이름"])}<span>${bad.length ? `${bad.length}개 확인 필요` : `규격 ${v["검사"].length}개 통과`} · 항목 ${v["항목"].length}개</span></summary>
+      <div class="qa">${v["검사"].map(r => `<div><span>${esc(r["이름"])}</span><span class="chip ${EXP_CHIP[r["판정"]] || "warn"}">${r["판정"] === "ok" ? "✓ " : r["판정"] === "soon" ? "" : "⚠ "}${esc(r["내용"])}</span></div>`).join("")}</div>
+      <button class="ghost" type="button" data-expopen="${esc(v["폴더"])}">📁 ${esc(v["이름"])} 폴더 열기</button></details>`;
+  }).join("") : "";
+  return `<section class="card"><h2>어디에 올릴까요?</h2>
+  <p class="lead">고르면 올릴 곳마다 폴더를 만들어 영상·썸네일·복사해 붙여 넣을 글을 넣고, 규격을 자동으로 검사해요. 올리기는 직접 하세요.</p>
+  <div class="opts dest">${chips}</div>
+  <div class="inline" style="margin-top:var(--s2)"><button class="primary" type="button" id="exportGo" ${run || !picked.length ? "disabled" : ""}>${run ? "내보내는 중…" : `내보내기 (${picked.length}곳)`}</button>
+    ${run ? `<span class="hint">${esc(j.stage || "")}</span>` : rep ? `<span class="hint">${rep["판정"] === "ok" ? "✓ 규격 자동 검사 통과" : "⚠ 확인이 필요한 곳이 있어요"} · ${esc(rep["날짜"])}</span>` : ""}</div>
+  ${j && !j.running && j.ok === false ? `<div class="verdict has-warn">⚠ ${esc(j.error)}</div>` : ""}
+  ${res ? `<div style="margin-top:var(--s2)">${res}</div><div class="inline" style="margin-top:var(--s2)"><button class="ghost" type="button" data-expopen="${esc(rep["폴더"])}">📁 내보내기 폴더 열기</button><span class="hint">공통 폴더에 올리기 체크리스트·성과 기록 표가 있어요</span></div>` : ""}
+</section>`;
 }
 
 // ── 그리기 ──
@@ -385,6 +411,16 @@ function render() {
     on("#folder", () => api("/api/open", { path: S.proj.work }));
     on("#again", () => go(1));
     on("#copyChap", () => navigator.clipboard && navigator.clipboard.writeText($("pre").innerText));
+    document.querySelectorAll("[data-exp]").forEach(c => c.onchange = () => {
+      const on_ = [...document.querySelectorAll("[data-exp]:checked")].map(x => x.dataset.exp);
+      store.set("exportTo", on_); render();
+    });
+    on("#exportGo", async () => {
+      const r = await api("/api/export", { path: S.proj.path, to: exportPicked(), choices: S.choices });
+      if (!r.ok) { alert(r.error); return; }
+      startPoll();
+    });
+    document.querySelectorAll("[data-expopen]").forEach(b => b.onclick = () => api("/api/open", { path: b.dataset.expopen }));
   }
 }
 
@@ -408,7 +444,11 @@ function startPoll() {
       clearInterval(S.poll);
       if (j.ok) { S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path))); }
     }
-    if ((S.cur === 0 && j.kind === "demo") || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
+    if (j.kind === "export" && !j.running) {
+      clearInterval(S.poll);
+      if (j.ok) S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path)));
+    }
+    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && j.kind === "demo") || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
       const ae = document.activeElement;
       const typing = ae && (ae.isContentEditable || ae.id === "ansV" || ae.type === "password");
       if (!typing) render();

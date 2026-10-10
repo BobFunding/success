@@ -175,8 +175,10 @@ def project_view(path: Path) -> dict:
     vids = sorted(w.glob("*_1440p60.mp4"))
     files = [str(f) for pat in ("*_1440p60.mp4", "*_1080p30.mp4", "*.srt", "챕터.txt") for f in sorted(w.glob(pat))]
     chap = (w / "챕터.txt").read_text(encoding="utf-8").splitlines() if (w / "챕터.txt").exists() else []
+    exp = w / "내보내기" / "점검.json"
+    export = json.loads(exp.read_text(encoding="utf-8")) if exp.exists() else None
     return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "secrets": secrets_needed, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
-            "choices": choices, "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
+            "choices": choices, "export": export, "platforms": platforms_view(), "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
 
 
 def save_project(path: Path, d: dict) -> Path:
@@ -250,6 +252,18 @@ def job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real: 
                                     encoding="utf-8")
     return maker.make(sc, w, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True), preview=preview,
                       ask=job.ask, allow_real=allow_real and not preview)
+
+
+def job_export(job: Job, path: Path, dests: list[str], ch: dict):
+    from .export import Exporter
+    sc = scenario_with_choices(path, ch)
+    return Exporter(sc, work_dir(path), log=job.log).export(dests, on_stage=job.stage)
+
+
+def platforms_view() -> list[dict]:
+    from .export import load_platforms
+    return [{"key": k, "name": p["이름"], "desc": p.get("설명", ""), "default": bool(p.get("기본"))}
+            for k, p in load_platforms()["올릴곳"].items()]
 
 
 def voice_preview(path: Path, voice_name: str, speed: int) -> str:
@@ -400,6 +414,12 @@ class Handler(BaseHTTPRequestHandler):
                 pv, real = bool(b.get("preview")), bool(b.get("allow_real"))   # 실제 저장은 화면에서 매번 확인받은 경우만
                 ok = JOB.start("make", lambda j: job_make(j, Path(b["path"]), b.get("choices", {}), pv, real),
                                path=b["path"], preview=pv)
+                return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/export":
+                dests = [d for d in b.get("to", []) if isinstance(d, str)]
+                if not dests:
+                    return self.json({"ok": False, "error": "올릴 곳을 하나 이상 골라 주세요."})
+                ok = JOB.start("export", lambda j: job_export(j, Path(b["path"]), dests, b.get("choices", {})), path=b["path"])
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
             if u.path == "/api/answer":
                 return self.json({"ok": JOB.answer(str(b.get("value", "")))})

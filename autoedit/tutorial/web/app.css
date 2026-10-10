@@ -214,3 +214,4 @@ input[type=number]{font:inherit;color:var(--fg);background:var(--bg);border:1px 
 
 [hidden]{display:none!important}
 td:nth-child(3){white-space:nowrap}
+.chip.soon{background:transparent;border:1px dashed var(--muted);color:var(--muted)}
