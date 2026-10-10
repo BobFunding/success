@@ -1,5 +1,6 @@
-"""튜토리얼 메이커 명령행 (화면은 4단계에서).
+"""튜토리얼 메이커 명령행. 보통은 화면으로 씁니다: python tutorial.py ui (튜토리얼.bat 이 이걸 띄움)
 
+python tutorial.py ui                                            # 화면 열기
 python tutorial.py make tutorials/ep1/scenario.yaml              # 처음부터 끝까지
 python tutorial.py make tutorials/ep1/scenario.yaml --only 편집  # 일부 단계만 (목소리, 리허설, 녹화, 편집)
 python tutorial.py check tutorials/ep1/scenario.yaml             # 장면 표 검사 + 리허설
@@ -31,11 +32,18 @@ def main() -> int:
     d.add_argument("--tone", default="차분", choices=("차분", "친근", "전문"))
     d.add_argument("--next", default="", help="다음 편 주제")
     d.add_argument("--out", default="", help="장면 표 파일 (기본: output/tutorial/<주제>/scenario.yaml)")
+    u = sub.add_parser("ui", help="화면 열기 (PC 안에서만 열림)")
+    u.add_argument("--port", type=int, default=8770)
+    u.add_argument("--no-browser", action="store_true")
     r = sub.add_parser("repro", help="1편 재현 검사")
     r.add_argument("--work", default="output/repro")
     r.add_argument("--only", nargs="+", choices=("기준", "같은녹화", "프로그램", "비교"))
     a = ap.parse_args()
 
+    if a.cmd == "ui":
+        from autoedit.tutorial.server import serve
+        serve(a.port, not a.no_browser)
+        return 0
     if a.cmd == "demo":
         from autoedit.tutorial.demo_record import DemoSession, save
         sess = DemoSession(a.url)
@@ -65,7 +73,8 @@ def main() -> int:
             maker.make(sc, work, stages=("목소리", "리허설"))
             print("리허설 통과: 모든 누를 곳을 찾았어요.")
             return 0
-        res = maker.make(sc, work, stages=a.only or maker.STAGES, fast=a.fast)
+        res = maker.make(sc, work, stages=a.only or maker.STAGES, fast=a.fast,
+                         on_stage=lambda n, est=None: print(f"── {n}" + (f" (전체 예상 약 {sum(est.values()) / 60:.0f}분)" if est and n == "리허설" else "")))
     except (SceneError, CaptureUnavailable) as e:      # 사람 말로, 그 자리에
         print(f"멈췄어요: {e}")
         return 1

@@ -14,10 +14,11 @@ import tempfile
 import time
 from pathlib import Path
 
-from .capture import open_capture
+from .capture import FrameCapture, capture_method, open_capture
 from .scenario import Scenario, Scene
 
-CHROME = "/opt/pw-browsers/chromium"
+# 이 클라우드 환경은 미리 설치된 Chromium, 사용자 PC 는 setup 이 받은 Playwright Chromium
+CHROME = "/opt/pw-browsers/chromium" if Path("/opt/pw-browsers/chromium").exists() else None
 W, H, SCALE = 1920, 1080, 1.5          # CSS 1920x1080 × 1.5 = 화면 2880x1620 (1편)
 
 CURSOR = """(() => { const add = () => { if (document.getElementById('__cur')) return; const c = document.createElement('div'); c.id='__cur';
@@ -82,6 +83,8 @@ class Recorder:
         self.scene: Scene | None = None
         self.blocking = False
         self.mode = "dry"
+        self.k = 1.0                      # 느리게 돌리는 배수 (한 장씩 찍기)
+        self.frames = None
 
     def block_requests(self) -> None:
         """저장·발송 요청(xhr/fetch) 차단을 켠다(안전 규칙). 차단 주소 화면에서만 막는다.
@@ -90,30 +93,44 @@ class Recorder:
         if not blk or self.blocking:
             return
         pg = self.pg
-        pg.route("**/*", lambda r: r.abort() if r.request.resource_type in ("xhr", "fetch")
-                 and blk in (pg.url or "") else r.continue_())
+
+        def guard(r):
+            q = r.request
+            # xhr/fetch 전부 + 양식 제출(POST 로 화면 넘기기)도 막는다
+            save = q.resource_type in ("xhr", "fetch") or (q.resource_type == "document" and q.method != "GET")
+            r.abort() if save and blk in (pg.url or "") else r.continue_()
+        pg.route("**/*", guard)
         self.blocking = True
 
     # ── 기본 동작 (1편과 같은 계산) ──
     def now(self) -> float:
-        return time.monotonic() - self.t0
+        """장면 시각. 한 장씩 찍기에서는 느리게 돌리므로 실제 시간 ÷ k."""
+        return (time.monotonic() - self.t0) / self.k
+
+    def sleep(self, d: float) -> None:
+        if d <= 0:
+            return
+        if self.frames:
+            self.frames.hold(d * self.k)          # 기다리는 동안 계속 찍는다
+        else:
+            time.sleep(d)
 
     def mark(self, k: str) -> None:
         self.log["marks"][k] = round(self.now(), 3)
 
     def glide(self, x, y, sec):
         x0, y0 = self.pos
-        n = max(8, int(sec * 60))
+        n = max(8, int(sec * (30 if self.frames else 60)))   # 한 장씩 찍기는 초당 30장이라 30걸음이면 충분
         for i in range(1, n + 1):
             p = i / n
             e = 1 - (1 - p) ** 3 if p < 1 else 1      # 감속하며 도착 (곧장 가서 부드럽게 멈춤)
             self.pg.mouse.move(x0 + (x - x0) * e, y0 + (y - y0) * e)
-            time.sleep(sec / n)
+            self.sleep(sec / n)
         self.pos[:] = [x, y]
 
     def click(self):
         self.log["clicks"].append({"t": round(self.now(), 3), "x": self.pos[0] * SCALE, "y": self.pos[1] * SCALE})
-        self.pg.mouse.down(); time.sleep(0.07); self.pg.mouse.up()
+        self.pg.mouse.down(); self.sleep(0.07); self.pg.mouse.up()
 
     def locate(self, target: str):
         """누를 곳 찾기: 선택자면 그대로, 보이는 글자면 버튼 → 링크 → 라벨 → 안내 글씨 → 글자 순서로."""
@@ -163,13 +180,13 @@ class Recorder:
     def wait_until(self, t):
         d = t - self.now()
         if d > 0:
-            time.sleep(d)
+            self.sleep(d)
 
     def scroll_to(self, y, sec=0.9):
         self.pg.evaluate("""([y, ms]) => new Promise(res => { const s = scrollY, t0 = performance.now();
           const f = n => { const p = Math.min(1, (n - t0) / ms), e = p < .5 ? 4*p*p*p : 1 - Math.pow(-2*p + 2, 3) / 2;
             scrollTo(0, s + (y - s) * e); p < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); })""",
-                         [y, sec * 1000])
+                         [y, sec * 1000 * self.k])
 
     def typ(self, sel, text, delay):
         """커서가 있는 자리에서 칸을 누르고 한 글자씩 적는다.
@@ -186,7 +203,7 @@ class Recorder:
             loc.focus()                              # 다른 것이 덮고 있어 클릭이 안 먹으면 직접 맞춘다
         for ch in text:
             self.pg.keyboard.type(ch)
-            time.sleep(delay)
+            self.sleep(delay)
         if self.mode == "dry" and text and not loc.input_value():   # 사이트가 모양을 바꿔 넣을 수 있어 비었는지만 본다
             raise SceneError(self.scene, sel, "적은 글자가 칸에 들어가지 않았어요")
 
@@ -197,29 +214,30 @@ class Recorder:
         if not b:
             raise SceneError(self.scene, f"{box_idx + 1}번째 선택 상자")
         self.glide(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2, 0.35); self.click()
-        time.sleep(0.35)
+        self.sleep(0.35)
         opt = (self.pg.get_by_role("option", name=option_text, exact=True) if option_text
                else self.pg.get_by_role("option").nth(option_idx))
         opt.scroll_into_view_if_needed()
         ob = opt.bounding_box()
         self.glide(ob["x"] + min(60, ob["width"] / 2), ob["y"] + ob["height"] / 2, 0.3); self.click()
-        time.sleep(0.3)
+        self.sleep(0.3)
 
     def pick_native(self, p) -> None:
-        """기본 <select>: 상자로 가서 누르고 항목을 고른다(펼친 목록은 운영체제가 그려서 바로 고름)."""
+        """기본 <select>: 상자로 가서 누르는 효과를 남기고 항목을 바로 고른다.
+        실제로 누르면 운영체제가 그리는 펼친 목록이 뜨는데, 창 없는 브라우저에서는 그 목록이 화면 찍기를 막는다."""
         x, y, _ = self.center(p.target, self.scene.label if self.scene else "")
-        self.glide(x, y, 0.45); self.click()
+        self.glide(x, y, 0.45)
+        self.log["clicks"].append({"t": round(self.now(), 3), "x": self.pos[0] * SCALE, "y": self.pos[1] * SCALE})
         loc = self.locate(p.target)
-        time.sleep(0.25)
         try:
+            loc.focus()
             if p.text:
                 loc.select_option(label=p.text, timeout=5000)
             else:
                 loc.select_option(index=int(p.index or 0), timeout=5000)
         except Exception:
             raise SceneError(self.scene, p.text or p.target, "목록에 그 항목이 없어요") from None
-        self.pg.keyboard.press("Escape")
-        time.sleep(0.3)
+        self.sleep(0.55)
 
     # ── 장면 ──
     def do_click(self, s: Scene, end: float) -> None:
@@ -232,7 +250,7 @@ class Recorder:
         move = s.move if s.move is not None else max(0.6, min(1.2, d * 0.35))
         s0 = self.now()
         pre = d * s.pre_wait if s.pre_wait is not None else max(0.0, d - move - s.lead - 0.5) * 0.4
-        time.sleep(pre)
+        self.sleep(pre)
         if s.spot_from == "이동":
             s0 = self.now()
         self.glide(x + s.offset[0], y + s.offset[1], move)
@@ -297,6 +315,8 @@ class Recorder:
 
     def run_scene(self, s: Scene, last: bool) -> None:
         self.scene = s
+        if self.frames:
+            self.frames.slow_animations()        # 화면이 바뀌면 다시 걸어 둔다
         end = self.line(s.key)
         if s.bubble:
             self.mark(f"bubble_{s.key}")
@@ -309,7 +329,7 @@ class Recorder:
                         self.pg.wait_for_load_state("networkidle")
                 if s.wait_for:
                     self.pg.wait_for_selector(s.wait_for)
-                    time.sleep(0.4)
+                    self.sleep(0.4)
             except SceneError:
                 raise
             except Exception:
@@ -321,12 +341,12 @@ class Recorder:
         elif s.action == "스크롤":
             for kind, a, b in s.scrolls:
                 if kind == "대기":
-                    time.sleep(a)
+                    self.sleep(a)
                 else:
                     self.scroll_to(a, b)
         # 보여주기·대기: 화면은 그대로, 문장만
         if last:
-            time.sleep(self.sc.end_hold)
+            self.sleep(self.sc.end_hold)
         else:
             self.wait_until(end + s.gap)
 
@@ -335,12 +355,12 @@ class Recorder:
         # 녹화 동기 표시: 화면을 0.3초 검게 → 영상에서 이 순간을 찾아 시각을 맞춘다
         pg.goto(self.sc.url, wait_until="networkidle", timeout=60000)
         pg.mouse.move(*self.pos)
-        time.sleep(0.8)
+        self.sleep(0.8)
         pg.evaluate("() => { const d = document.createElement('div'); d.id='__sync'; d.style.cssText='position:fixed;inset:0;background:#000;z-index:2147483646'; document.body.appendChild(d); }")
         self.mark("sync")
-        time.sleep(0.3)
+        self.sleep(0.3)
         pg.evaluate("() => document.getElementById('__sync').remove()")
-        time.sleep(0.8)
+        self.sleep(0.8)
         self.mark("body_start")
         step = 0
         for i, s in enumerate(self.sc.scenes):
@@ -351,13 +371,15 @@ class Recorder:
         self.mark("body_end")
 
     # ── 실행 ──
-    def run(self, mode: str, out_dir: Path) -> dict:
+    def run(self, mode: str, out_dir: Path, progress=None) -> dict:
+        """mode: dry(리허설) / rec(녹화). 녹화 방식은 capture.method() 가 고른다(사용자는 고르지 않음)."""
         from playwright.sync_api import sync_playwright
         self.mode = mode
         out_dir.mkdir(parents=True, exist_ok=True)
+        method = capture_method() if mode == "rec" else "dry"
         cap = None
         with sync_playwright() as p:
-            if mode == "rec":
+            if method == "x11":
                 cap = open_capture(int(W * SCALE), int(H * SCALE), 30)
                 # 기본 창을 그대로 써야 전체 화면(kiosk)이 적용된다. 창 크기는 CSS 픽셀 기준
                 ctx = p.chromium.launch_persistent_context(
@@ -368,13 +390,14 @@ class Recorder:
                           "--disable-infobars"])
                 br = ctx
             else:
-                br = p.chromium.launch(executable_path=CHROME)
-                ctx = br.new_context(viewport={"width": W, "height": H})
+                br = p.chromium.launch(executable_path=CHROME, args=["--hide-scrollbars"])
+                ctx = br.new_context(viewport={"width": W, "height": H},
+                                     device_scale_factor=SCALE if method == "frames" else 1)
             ctx.add_init_script(CURSOR)
             css = privacy_css(self.sc.privacy_fields)
             if css:
                 ctx.add_init_script(style_script(css))
-            pg = ctx.pages[0] if mode == "rec" else ctx.new_page()
+            pg = ctx.pages[0] if method == "x11" else ctx.new_page()
             self.pg = pg
             pg.on("dialog", lambda d: d.dismiss())
             if self.sc.block_requests:
@@ -383,10 +406,18 @@ class Recorder:
                 # 장면 표에 적지 않은 길로 차단 화면에 들어가도 바로 켠다
                 pg.on("framenavigated", lambda f: f == pg.main_frame and self.sc.block_requests in f.url
                       and self.block_requests())
-            if mode == "rec":
+            if method == "x11":
                 pg.goto("about:blank"); time.sleep(0.5)
                 cap.start(out_dir / "cap.mkv")
+            elif method == "frames":
+                self.frames = FrameCapture(pg, ctx, out_dir / "frames")
+                self.k = self.frames.choose_speed(self.sc.url)
+                self.say(f"[녹화] 한 장씩 찍기: {self.k:g}배 느리게 (예상 {self.k * sum(self.dur.values()) / 60:.0f}분 안팎)")
+                if progress:
+                    progress({"k": self.k})
             self.t0 = time.monotonic()
+            if self.frames:
+                self.frames.t0, self.frames.k = self.t0, self.k
             try:
                 self.scenario()
             finally:
@@ -396,11 +427,15 @@ class Recorder:
                 (out_dir / f"log_{mode}.json").write_text(json.dumps(self.log, ensure_ascii=False, indent=1),
                                                           encoding="utf-8")
                 try:
+                    if self.frames:
+                        self.sleep(0.5)
                     pg.screenshot(path=str(out_dir / f"last_{mode}.png"))
                 finally:
                     br.close()
                     if cap:
                         cap.close()
+            if self.frames:
+                self.frames.encode(out_dir / "cap.mkv")
         self.say(f"[녹화:{mode}] 클릭 {len(self.log['clicks'])}번, 밝게 {len(self.log['spots'])}곳, "
                  f"{self.log['marks'].get('body_end', 0) - self.log['marks'].get('body_start', 0):.1f}초")
         return self.log

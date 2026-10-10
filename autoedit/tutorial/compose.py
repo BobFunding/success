@@ -52,13 +52,21 @@ def srt_time(x):
     return f"{int(x // 3600):02d}:{int(x % 3600 // 60):02d}:{int(x % 60):02d},{int(round(x % 1 * 1000)) % 1000:03d}"
 
 
+def ff_path(p: Path) -> str:
+    """ffmpeg 필터 안에 넣을 경로. Windows 드라이브 글자의 ':' 는 필터 구분자라 '\\:' 로 (Linux·Mac 은 그대로)."""
+    return Path(p).resolve().as_posix().replace(":", "\\:")
+
+
 def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 class Composer:
-    def __init__(self, sc: Scenario, work: Path, log=print):
+    def __init__(self, sc: Scenario, work: Path, log=print, rules: dict | None = None, subtitles: bool = True):
+        from .rules import merged
         self.sc, self.work, self.say = sc, work, log
+        self.rules = rules or merged()
+        self.subtitles = subtitles
         b = sc.brand
         self.BG, self.ACCENT, self.POINT, self.FONT = tuple(b.background), b.accent, b.point, b.font
         self.STEPS = sc.steps
@@ -172,7 +180,23 @@ class Composer:
         return next(ln["t"] for ln in self.rec["lines"] if ln["key"] == key)
 
     # ── 전체 ──
-    def build(self, fast: bool = False) -> dict:
+    def _fresh(self, f: Path, key) -> bool:
+        """f 가 같은 재료로 만든 것이면 다시 만들지 않는다(재료가 바뀌면 다시)."""
+        k = json.dumps(key, ensure_ascii=False, sort_keys=True, default=str)
+        kp = f.with_name(f.name + ".key")
+        if f.exists() and kp.exists() and kp.read_text(encoding="utf-8") == k:
+            return True
+        self._keys[f] = (kp, k)
+        return False
+
+    def _done(self, f: Path):
+        if f in self._keys:
+            kp, k = self._keys.pop(f)
+            kp.write_text(k, encoding="utf-8")
+
+    def build(self, fast: bool = False, on_stage=None) -> dict:
+        stage = on_stage or (lambda n: None)
+        self._keys = {}
         work, sc, DUR, TXT = self.work, self.sc, self.DUR, self.TXT
         base = sc.file_name
         mk = self.rec["marks"]
@@ -182,17 +206,22 @@ class Composer:
         tb = lambda t: t + self.OFF - TRIM0           # 기록 시각 → 본편 시각
 
         # 1) 본편: 녹화본 자르기 → screenfx
-        if not (work / "body.mp4").exists():
+        stage("화면 연출")
+        zoom = (self.rules["확대"], self.rules["최대확대"])
+        cap_key = [(work / "cap.mkv").stat().st_mtime if (work / "cap.mkv").exists() else 0, self.OFF, zoom, self.BG]
+        if not self._fresh(work / "body.mp4", cap_key):
             run("-ss", f"{TRIM0:.3f}", "-to", f"{TRIM1:.3f}", "-i", str(work / "cap.mkv"),
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p", "-an", str(work / "body_src.mp4"))
             clicks = [dict(c, t=round(tb(c["t"]), 3)) for c in self.rec["clicks"]]
             spots = [dict(s, start=tb(s["start"]), end=tb(s["end"])) for s in self.rec["spots"]]
-            s = ScreenFxSettings(background=self.BG, zoom=1.6, max_zoom=2.0, speedup=1.0, out_size=(W, H),
+            s = ScreenFxSettings(background=self.BG, zoom=zoom[0], max_zoom=zoom[1], speedup=1.0, out_size=(W, H),
                                  crf=16, x264_preset="medium", padding=0.06)
             plan = render(work / "body_src.mp4", work / "body.mp4", s, clicks=clicks, spots=spots, out_fps=FPS)
             self.say(f"[편집] 본편 확대 {len(plan['focus'])}곳")
+            self._done(work / "body.mp4")
 
         # 2) 인트로·아웃트로 카드
+        stage("인트로·아웃트로·자막")
         I = [k.key for k in sc.intro]
         O = [k.key for k in sc.outro]
         I1, I2 = 0.8, 0.8 + DUR[I[0]] + GAP
@@ -200,15 +229,18 @@ class Composer:
         cw, chh, cx = self.card_row()
         cy = 900
         n = len(self.STEPS)
-        if not (work / "intro.mp4").exists():
+        b = sc.brand
+        look = [self.BG, self.ACCENT, self.POINT, self.FONT, b.logo, b.name, b.highlight, self.STEPS]
+        if not self._fresh(work / "intro.mp4", look + [sc.title, DUR[I[0]], DUR[I[1]]]):
             layers = [(self.logo_layer(330), 0.15), (self.svg_layer(self.title_svg()), 0.6)]
             layers = [l for l in layers if l[0] is not None]
             layers += [(self.svg_layer(self.step_card(i, cx[i], cy, cw, chh)), I2 + 1.2 + i * 0.9) for i in range(n)]
             self.animate(work / "intro.mp4", INTRO_LEN, layers)
+            self._done(work / "intro.mp4")
         O1 = 0.5
         O2 = O1 + DUR[O[0]] + 0.9
         OUTRO_LEN = round(O2 + DUR[O[1]] + 1.0, 2)
-        if not (work / "outro.mp4").exists():
+        if not self._fresh(work / "outro.mp4", look + [sc.next_episode, DUR[O[0]], DUR[O[1]]]):
             head = self.svg_layer(f'<text x="{W / 2}" y="420" text-anchor="middle" font-family="{self.FONT}" font-weight="900" '
                                   f'font-size="92" fill="#ffffff">오늘 배운 {_count(n)} 단계</text>')
             layers = [(head, 0.1)]
@@ -223,6 +255,7 @@ class Composer:
             layers += [(self.logo_layer(1060, 1.1), O2 + 0.6)]
             layers = [l for l in layers if l[0] is not None]
             self.animate(work / "outro.mp4", OUTRO_LEN, layers)
+            self._done(work / "outro.mp4")
 
         # 3) 자막·단계 표시·말풍선 (ASS) + srt
         body_lines = [(ln["key"], tb(ln["t"]) + INTRO_LEN) for ln in self.rec["lines"]]
@@ -231,7 +264,7 @@ class Composer:
         TOTAL = INTRO_LEN + BODY_LEN + OUTRO_LEN
         sub = lambda k: subtitle_text(TXT[k], sc.brand)
         ev = []
-        for k, t in placed:
+        for k, t in placed if self.subtitles else []:      # 자막 끄기: 화면 자막만 빼고 .srt 는 그대로
             ev.append(f"Dialogue: 0,{ts(t)},{ts(t + DUR[k] + 0.25)},Sub,,0,0,0,,{sub(k)}")
         st = [tb(mk[f"step{i + 1}"]) for i in range(n)] + [BODY_LEN]
         for i in range(n):
@@ -260,13 +293,14 @@ class Composer:
         (work / f"{base}.srt").write_text("\n".join(srt), encoding="utf-8")
 
         # 4) 나레이션 트랙
+        stage("출력")
         build_track([(t, self.NAR[k][1]) for k, t in placed], TOTAL, work / "narration.wav")
 
         # 5) 최종 합성
         final = work / f"{base}_1440p60.mp4"
         run("-i", str(work / "intro.mp4"), "-i", str(work / "body.mp4"), "-i", str(work / "outro.mp4"),
             "-i", str(work / "narration.wav"),
-            "-filter_complex", f"[0:v][1:v][2:v]concat=n=3:v=1:a=0,fps={FPS},ass=filename='{ass_path}':fontsdir='{FONTS}'[v]",
+            "-filter_complex", f"[0:v][1:v][2:v]concat=n=3:v=1:a=0,fps={FPS},ass=filename='{ff_path(ass_path)}':fontsdir='{ff_path(FONTS)}'[v]",
             "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p",
             "-g", str(FPS * 2), "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
             "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-movflags", "+faststart", "-t", f"{TOTAL:.3f}", str(final))
@@ -279,7 +313,12 @@ class Composer:
                [("마무리", INTRO_LEN + BODY_LEN)]
         (work / "챕터.txt").write_text("\n".join(f"{int(t // 60)}:{int(t % 60):02d} {c}" for c, t in chap), encoding="utf-8")
         self.say(f"[편집] 완성: 인트로 {INTRO_LEN:.1f}s + 본편 {BODY_LEN:.1f}s + 아웃트로 {OUTRO_LEN:.1f}s = {TOTAL:.1f}s")
-        return {"intro": INTRO_LEN, "body": BODY_LEN, "outro": OUTRO_LEN, "total": TOTAL, "final": str(final)}
+        # 표지(결과 화면·내보내기용): 인트로 제목이 다 보인 순간
+        run("-ss", f"{min(INTRO_LEN - 0.5, I2 + 1.2 + n * 0.9):.2f}", "-i", str(final), "-frames:v", "1", "-q:v", "3",
+            str(work / f"{base}_poster.jpg"))
+        files = [final, work / f"{base}_1080p30.mp4", work / f"{base}.srt", work / "챕터.txt"]
+        return {"intro": INTRO_LEN, "body": BODY_LEN, "outro": OUTRO_LEN, "total": TOTAL, "final": str(final),
+                "files": [str(f) for f in files if f.exists()], "chapters": [f"{int(t // 60)}:{int(t % 60):02d} {c}" for c, t in chap]}
 
 
 def _count(n: int) -> str:

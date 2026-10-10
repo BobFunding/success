@@ -1,0 +1,8 @@
+# 튜토리얼 메이커에 필요한 것 (setup.bat / setup.sh 가 설치)
+playwright
+edge-tts
+pyyaml
+numpy
+opencv-python-headless
+resvg-py
+certifi

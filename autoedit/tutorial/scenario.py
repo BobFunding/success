@@ -92,6 +92,11 @@ class Brand:
     logo: str = ""
     voice: str = "ko-KR-HyunsuMultilingualNeural"
     voice_rate: int = -8
+    tone: str = "차분"
+    greeting: str = ""           # 고정 인사말 (비우면 '안녕하세요, {읽는이름}입니다.')
+    footer: str = ""             # 설명 끝 고정 문구 (내보내기용)
+    rules: dict = field(default_factory=dict)   # 브랜드 규칙 층
+    key: str = ""                # 파일 이름(presets/brands/<key>.yaml)
 
 
 @dataclass
@@ -109,6 +114,7 @@ class Scenario:
     privacy_fields: list[str] = field(default_factory=list)
     block_requests: str = ""     # 이 주소가 들어간 화면에서는 저장·발송 요청(xhr/fetch) 차단
     end_hold: float = 0.9        # 마지막 클릭 뒤 화면 유지
+    rules: dict = field(default_factory=dict)   # 이번 영상만 규칙 층
     source: Path | None = None
 
     def lines(self) -> list[Line]:
@@ -175,10 +181,26 @@ def _scene(i: int, d: dict, gap: float) -> Scene:
     return sc
 
 
+USER_BRANDS = Path.home() / ".tutorial_maker" / "brands"
+
+
+def brand_path(name: str) -> Path:
+    """사용자가 만든 브랜드(PC 안) → 기본 제공 브랜드 순서로 찾는다."""
+    for d in (USER_BRANDS, PRESETS / "brands"):
+        if (d / f"{name}.yaml").exists():
+            return d / f"{name}.yaml"
+    return PRESETS / "brands" / f"{name}.yaml"
+
+
+def brand_names() -> list[str]:
+    names = {p.stem for d in (PRESETS / "brands", USER_BRANDS) if d.exists() for p in d.glob("*.yaml")}
+    return sorted(names, key=lambda n: (n == "basic", n))
+
+
 def load_brand(name_or_path: str, base: Path | None = None) -> Brand:
     p = Path(name_or_path)
     if not p.suffix:
-        p = PRESETS / "brands" / f"{name_or_path}.yaml"
+        p = brand_path(name_or_path)
     elif base and not p.is_absolute():
         p = base / p
     d = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
@@ -191,6 +213,10 @@ def load_brand(name_or_path: str, base: Path | None = None) -> Brand:
             setattr(b, a, str(d[k]))
     if "목소리빠르기" in d:
         b.voice_rate = int(d["목소리빠르기"])
+    b.tone = str(d.get("말투") or "차분")
+    b.greeting, b.footer = str(d.get("인사말") or ""), str(d.get("고정문구") or "")
+    b.rules = dict(d.get("규칙") or {})
+    b.key = p.stem
     if d.get("로고"):
         b.logo = str((p.parent / d["로고"]).resolve())
     return b
@@ -221,7 +247,7 @@ def load(path: str | Path) -> Scenario:
                   file_name=str(d.get("파일이름") or path.stem), next_episode=str(d.get("다음편") or ""),
                   start_state=str(d.get("시작상태") or "로그아웃"),
                   privacy_fields=list(d.get("개인정보칸") or []), block_requests=str(d.get("요청차단") or ""),
-                  end_hold=float(d.get("끝유지", 0.9)), source=path)
+                  end_hold=float(d.get("끝유지", 0.9)), rules=dict(d.get("규칙") or {}), source=path)
     keys = [ln.key for ln in sc.lines()]
     dup = {k for k in keys if keys.count(k) > 1}
     if dup:

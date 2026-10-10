@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>튜토리얼 메이커</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">T</div>
+      <div><h1>튜토리얼 메이커</h1><div class="hint">웹사이트에서 한 번 해 보이면, 사용법 영상이 완성됩니다</div></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="ghost" id="settingsBtn" type="button">⚙ 설정</button>
+    </div>
+  </header>
+  <nav class="steps" aria-label="진행 단계" id="nav"></nav>
+  <main id="main"></main>
+</div>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="panel" role="dialog" aria-label="설정">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <h2 style="font-family:var(--display);margin:0;font-size:18px;color:var(--navy)">설정</h2>
+      <button class="ghost" type="button" id="closeDrawer">닫기</button>
+    </div>
+    <p class="hint" style="margin:0">처음 한 번만 정해 두면 됩니다. 안 건드려도 1편과 같은 품질로 나옵니다.</p>
+    <div class="opts" role="tablist">
+      <label class="opt"><input type="radio" name="tb" id="tbB" checked><span>브랜드 · 모양과 목소리</span></label>
+      <label class="opt"><input type="radio" name="tb" id="tbR"><span>규칙 · 길이와 문장</span></label>
+    </div>
+    <div id="tabBrand" style="display:flex;flex-direction:column;gap:var(--s2)"></div>
+    <div id="tabRules" hidden style="display:flex;flex-direction:column;gap:var(--s2)"></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

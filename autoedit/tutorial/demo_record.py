@@ -105,14 +105,15 @@ PRIVATE = re.compile(r"이름|성명|성\b|name|전화|휴대|phone|mobile|tel|�
 class DemoSession:
     """브라우저를 띄우고 동작을 모은다. finish() 로 장면 표(dict)를 돌려준다."""
 
-    def __init__(self, url: str, headless: bool = False, viewport=(1920, 1080)):
+    def __init__(self, url: str, headless: bool = False, viewport=(1920, 1080), cdp_port: int | None = None):
         from playwright.sync_api import sync_playwright
         from .recorder import CHROME
         self.url = url
         self.events: list[dict] = []
         self.navs: list[tuple[float, str]] = []
         self._p = sync_playwright().start()
-        self.browser = self._p.chromium.launch(executable_path=CHROME, headless=headless)
+        args = [f"--remote-debugging-port={cdp_port}"] if cdp_port else []   # 검사용: 바깥에서 사람처럼 조작
+        self.browser = self._p.chromium.launch(executable_path=CHROME, headless=headless, args=args)
         self.ctx = self.browser.new_context(viewport={"width": viewport[0], "height": viewport[1]})
         self.ctx.expose_binding("__tmRecord", lambda src, e: self.events.append(e))
         self.ctx.add_init_script(RECORDER_JS)
@@ -120,13 +121,16 @@ class DemoSession:
         self.page.on("framenavigated", lambda f: f == self.page.main_frame and self.navs.append((time.time() * 1000, f.url)))
         self.page.goto(url, wait_until="networkidle", timeout=60000)
 
-    def finish(self, topic: str = "", brand: str = "", tone: str = "차분", next_topic: str = "") -> dict:
+    def finish(self, topic: str = "", brand: str = "", tone: str = "", next_topic: str = "") -> dict:
         try:
             self.page.wait_for_timeout(300)
         except Exception:
             pass
         evs = list(self.events)
-        self.browser.close()
+        try:
+            self.browser.close()
+        except Exception:
+            pass                                  # 사람이 창을 먼저 닫은 경우
         self._p.stop()
         return build_scenario(self.url, evs, self.navs, topic=topic, brand=brand, tone=tone, next_topic=next_topic)
 
@@ -281,7 +285,7 @@ def _short(s: str, n: int = 12) -> str:
     return s if len(s) <= n else s[:n].rstrip()
 
 
-def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str = "", tone: str = "차분",
+def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str = "", tone: str = "",
                    next_topic: str = "") -> dict:
     scenes = clean_events(evs, navs)
     if not scenes:
@@ -294,6 +298,9 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
     if not topic:
         topic = f"{_short(scenes[-1]['heading'], 20) or host} 방법"
     intro, outro = T.intro_outro(topic, len(step_names), spoken, next_topic)
+    if b.greeting:
+        intro[0] = b.greeting                               # 브랜드 고정 인사말
+    tone = tone or b.tone
     out_scenes = []
     privacy, block_from = [], ""
     for i, s in enumerate(scenes):
@@ -311,6 +318,7 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
             d.update(동작="입력", 대상=s["name"], 칸=[{"누를곳": s["sel"], "값": val}])
             if s.get("button"):
                 d["버튼"] = s["button"]
+                d["버튼이름"] = s.get("button_name", "")
             line = T.scene_line("입력", s["name"], button=s.get("button_name", ""), first=i == 0, tone=tone)
             if s.get("private") or s["secret"]:
                 privacy.append(s["sel"])
