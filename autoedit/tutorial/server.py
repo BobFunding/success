@@ -33,6 +33,7 @@ from . import assistant as A  # AI 도우미(키 있을 때만)
 from . import langs as LG      # 다국어
 from . import ops as OPS       # 오류 보고·공유 파일·시리즈
 from . import style as ST      # 참고 영상 스타일 카드
+from .compose import main_video
 from . import voices as V      # 목소리 목록(AI·유료·내 목소리·자막만)은 voices.py
 
 
@@ -149,7 +150,8 @@ def list_projects() -> list[dict]:
         try:
             d = yaml.safe_load(p.read_text(encoding="utf-8"))
             w = work_dir(p)
-            vids = sorted(w.glob("*_1440p60.mp4"))
+            mv = main_video(w)
+            vids = [mv] if mv else []
             mark = w / "작업중.json"
             out.append({"path": str(p), "title": str(d["제목"]).replace("[", "").replace("]", ""),
                         "scenes": len(d.get("장면") or []), "example": p == EXAMPLE, "video": str(vids[0]) if vids else "",
@@ -175,8 +177,11 @@ def project_view(path: Path) -> dict:
     qa_res = json.loads((w / "qa.json").read_text(encoding="utf-8")) if (w / "qa.json").exists() else None
     from . import secrets as SEC
     secrets_needed = SEC.needed(sc) if sc else []
-    vids = sorted(w.glob("*_1440p60.mp4"))
-    files = [str(f) for pat in ("*_1440p60.mp4", "*_1080p30.mp4", "*.srt", "챕터.txt") for f in sorted(w.glob(pat))]
+    mv = main_video(w)
+    mob = main_video(w / "모바일")
+    vids = [mv] if mv else ([mob] if mob else [])
+    files = [str(mv)] * bool(mv) + [str(f) for pat in ("*_1080p30.mp4", "*.srt", "챕터.txt") for f in sorted(w.glob(pat))] \
+        + ([str(mob)] if mob else [])
     chap = (w / "챕터.txt").read_text(encoding="utf-8").splitlines() if (w / "챕터.txt").exists() else []
     ser = OPS.series_list(sorted(PROJECTS.glob("*/scenario.yaml")) if PROJECTS.exists() else [])
     exp = w / "내보내기" / "점검.json"
@@ -346,14 +351,29 @@ def _job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real:
     w = work_dir(path)
     (w / "choices.json").write_text(json.dumps({k: v for k, v in ch.items() if k != "allow_real"}, ensure_ascii=False),
                                     encoding="utf-8")
-    return maker.make(sc, w, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True), preview=preview,
-                      ask=job.ask, allow_real=allow_real and not preview)
+    dev = ch.get("device", "PC")
+    run = lambda d, ww: maker.make(sc, ww, log=job.log, on_stage=job.stage, subtitles=ch.get("subtitles", True), preview=preview,
+                                   ask=job.ask, allow_real=allow_real and not preview, quality=ch.get("quality", "1440p"), device=d)
+    if dev in ("아이폰", "갤럭시"):                   # 모바일 영상은 작업 폴더 안 '모바일' 폴더에(PC 영상과 따로)
+        r = run(dev, w / "모바일")
+        r["device"] = dev
+        return r
+    r = run("PC", w)
+    if dev == "둘 다":                               # 같은 장면 표로 PC 다음 모바일(아이폰)
+        job.log("[기기] PC 영상 완성 → 이어서 모바일(아이폰)")
+        m = run("아이폰", w / "모바일")
+        r["mobile"] = m.get("final", "")
+        r["files"] = list(r.get("files") or []) + [m.get("final", "")]
+    return r
 
 
 def job_export(job: Job, path: Path, dests: list[str], ch: dict, vertical: str = "따라가기"):
     from .export import Exporter
     sc = scenario_with_choices(path, ch)
-    return Exporter(sc, work_dir(path), log=job.log, vertical=vertical).export(dests, on_stage=job.stage)
+    w = work_dir(path)
+    if not main_video(w) and main_video(w / "모바일"):     # 모바일로만 만들었으면 모바일 영상으로 내보내기
+        w = w / "모바일"
+    return Exporter(sc, w, log=job.log, vertical=vertical).export(dests, on_stage=job.stage)
 
 
 def platforms_view() -> list[dict]:

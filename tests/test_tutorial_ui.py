@@ -273,3 +273,25 @@ def test_update_check_counts_new_commits(tmp_path, monkeypatch):
     assert SV.update_apply()["ok"] and SV.update_check()["behind"] == 0
     monkeypatch.setattr(SV, "ROOT", tmp_path / "nogit")
     assert SV.update_check()["ok"] is False
+
+
+def test_quality_and_device_only_during_make(monkeypatch, tmp_path):
+    import os
+    from autoedit.tutorial import maker
+    from autoedit.tutorial import recorder as RC
+    seen = []
+    monkeypatch.setattr(maker, "_make", lambda *a: seen.append((RC.W, RC.H, RC.SCALE, RC.DEVICE, os.environ.get("TUTORIAL_CAPTURE"), a[-2], a[-1])) or {})
+    monkeypatch.delenv("TUTORIAL_CAPTURE", raising=False)
+    maker.make(None, tmp_path)
+    maker.make(None, tmp_path, quality="4K")
+    maker.make(None, tmp_path, device="아이폰")
+    assert seen[0] == (1920, 1080, 1.5, "PC", None, "1440p", "PC")                  # 기본은 1편 그대로
+    assert seen[1][:5] == (1920, 1080, 2.0, "PC", "frames")                         # 4K: 3840x2160 로 찍음
+    assert seen[2][:5] == (390, 844, 3.0, "아이폰", "frames")
+    assert (RC.W, RC.H, RC.SCALE, RC.DEVICE) == (1920, 1080, 1.5, "PC") and "TUTORIAL_CAPTURE" not in os.environ
+
+
+def test_composer_quality_sizes():
+    from autoedit.tutorial import compose as C
+    assert C.QUALITY == {"1440p": 1.0, "4K": 1.5, "8K": 3.0}
+    assert {k: (int(C.W * v), int(C.H * v)) for k, v in C.QUALITY.items()} == {"1440p": (2560, 1440), "4K": (3840, 2160), "8K": (7680, 4320)}

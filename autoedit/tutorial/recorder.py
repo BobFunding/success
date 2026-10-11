@@ -20,6 +20,24 @@ from .scenario import Scenario, Scene
 # 이 클라우드 환경은 미리 설치된 Chromium, 사용자 PC 는 setup 이 받은 Playwright Chromium
 CHROME = "/opt/pw-browsers/chromium" if Path("/opt/pw-browsers/chromium").exists() else None
 W, H, SCALE = 1920, 1080, 1.5          # CSS 1920x1080 × 1.5 = 화면 2880x1620 (1편)
+# 모바일 웹(9단계): 기기 흉내(화면 크기·터치·모바일 브라우저 이름). maker.make(device=...) 가 녹화 동안만 바꾼다
+DEVICE = "PC"
+DEVICES = {
+    "아이폰": {"viewport": (390, 844), "scale": 3.0, "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
+               "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},
+    "갤럭시": {"viewport": (412, 915), "scale": 2.625, "ua": "Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"},
+}
+# 모바일은 화살표 대신 손가락 자리(반투명 동그라미). 누르는 순간 진해진다
+TOUCH = """(() => { const add = () => { if (document.getElementById('__cur')) return; const c = document.createElement('div'); c.id='__cur';
+  c.style.cssText='position:fixed;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:rgba(40,40,40,.28);'
+    + 'border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.25);pointer-events:none;z-index:2147483647;transition:background .08s;'
+    + `transform:translate(${innerWidth / 2}px,${innerHeight / 2}px)`;
+  document.documentElement.appendChild(c);
+  document.addEventListener('mousemove', e => c.style.transform = `translate(${e.clientX}px,${e.clientY}px)`, true);
+  document.addEventListener('mousedown', () => c.style.background = 'rgba(40,40,40,.55)', true);
+  document.addEventListener('mouseup', () => c.style.background = 'rgba(40,40,40,.28)', true); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add(); })()"""
 
 CURSOR = """(() => { const add = () => { if (document.getElementById('__cur')) return; const c = document.createElement('div'); c.id='__cur';
   c.innerHTML = '<svg width="34" height="34" viewBox="0 0 26 26"><path d="M3 2 L3 21 L8 16 L12 24 L15 23 L11 15 L18 15 Z" fill="#111" stroke="#fff" stroke-width="1.6"/></svg>';
@@ -586,11 +604,17 @@ class Recorder:
                           f"--force-device-scale-factor={SCALE}", "--hide-scrollbars", "--no-first-run",
                           "--disable-infobars"])
                 br = ctx
+            elif DEVICE in DEVICES:                  # 모바일 웹: 기기 흉내(터치·모바일 화면)
+                br = p.chromium.launch(executable_path=CHROME, args=["--hide-scrollbars"])
+                ctx = br.new_context(viewport={"width": W, "height": H}, device_scale_factor=SCALE if method == "frames" else 1,
+                                     # is_mobile 은 끈다: 휴대폰용이 아닌 페이지를 브라우저가 줄여 그리면 누른 자리·밝게 하기 위치가
+                                     # 화면 사진과 어긋난다. 폭(뷰포트)·터치·모바일 브라우저 이름으로 휴대폰 화면은 그대로 나온다
+                                     is_mobile=False, has_touch=True, user_agent=DEVICES[DEVICE]["ua"])
             else:
                 br = p.chromium.launch(executable_path=CHROME, args=["--hide-scrollbars"])
                 ctx = br.new_context(viewport={"width": W, "height": H},
                                      device_scale_factor=SCALE if method == "frames" else 1)
-            ctx.add_init_script(CURSOR)
+            ctx.add_init_script(TOUCH if DEVICE in DEVICES else CURSOR)
             css = privacy_css(self.sc.privacy_fields)
             if self.sc.close_popups:
                 css = (css + "\n" + WIDGET_CSS).strip()

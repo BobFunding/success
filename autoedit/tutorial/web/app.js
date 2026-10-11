@@ -298,6 +298,10 @@ function viewChoose() {
     <div style="padding:0 14px 8px">
       <div class="group"><div class="k">말 빠르기</div><div><input type="range" id="spd" min="-10" max="10" step="2" value="${c.speed}" aria-label="말 빠르기"><div class="scale"><span>천천히</span><span>보통</span><span>빠르게</span></div></div></div>
       <div class="group"><div class="k">자막</div><div class="opts">${radios("sb", ["켜기", "끄기"], c.subtitles ? "켜기" : "끄기")}</div></div>
+      <div class="group"><div class="k">기기</div><div><div class="opts">${[["PC", "PC 화면"], ["아이폰", "모바일 · 아이폰"], ["갤럭시", "모바일 · 갤럭시"], ["둘 다", "PC·모바일 둘 다"]].map(([v, t]) => `<label class="opt"><input type="radio" name="dv" value="${v}" ${(c.device || "PC") === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div>
+        <div class="hint" style="margin-top:6px">같은 장면 표를 휴대폰 화면 크기·터치로 찍어요(커서 대신 손가락 자리). 모바일에서 메뉴 모양이 다르면 그 장면에서 멈추고 알려 드려요.</div></div></div>
+      <div class="group"><div class="k">화질 (고급)</div><div><div class="opts">${[["1440p", "1440p · 기본"], ["4K", "4K · 오래 걸림"], ["8K", "8K · 실험용"]].map(([v, t]) => `<label class="opt"><input type="radio" name="qu" value="${v}" ${(c.quality || "1440p") === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div>
+        <div class="hint" style="margin-top:6px">4K·8K 는 늘리지 않고 화면을 더 크게 찍어요. 8K 는 시간이 매우 길고 유튜브 말고는 쓸 곳이 거의 없어요.</div></div></div>
     </div></details>
 </section>
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button>
@@ -394,12 +398,12 @@ function viewResult() {
   const video = r ? r.final : S.proj.video;
   const files = r ? r.files : (S.proj.files || [video]);
   const chap = r ? r.chapters : (S.proj.chapters || []);
-  const label = f => f.endsWith("_1440p60.mp4") ? ["영상 (유튜브용)", "1440p"] : f.endsWith("_1080p30.mp4") ? ["영상 사본", "1080p"]
+  const label = f => /[\\/]모바일[\\/]/.test(f) ? ["모바일 영상", "아이폰·갤럭시"] : /_(1440|2160|4320)p60\.mp4$/.test(f) ? ["영상 (유튜브용)", { "1440": "1440p", "2160": "4K", "4320": "8K" }[f.match(/_(\d+)p60/)[1]]] : f.endsWith("_1080p30.mp4") ? ["영상 사본", "1080p"]
     : f.endsWith(".srt") ? ["자막", ".srt"] : f.endsWith(".txt") ? ["유튜브 챕터", ".txt"] : [f.split(/[\\/]/).pop(), ""];
   return `<section class="card"><h2>완성됐어요</h2>
   <p class="lead">${r ? `${Math.floor(r.total / 60)}분 ${Math.round(r.total % 60)}초 · 1440p 60fps · 챕터 ${chap.length}개` : "지난번에 만든 영상"}</p>
   <div class="row3" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)">
-    <video controls preload="metadata" src="${fileUrl(video)}" poster="${fileUrl(video.replace(/_1440p60\.mp4$/, "_poster.jpg"))}"></video>
+    <video controls preload="metadata" src="${fileUrl(video)}" poster="${fileUrl(video.replace(/_(1440|2160|4320)p60\.mp4$/, "_poster.jpg"))}"></video>
     <div class="files">${files.filter(Boolean).map(f => { const [a, b] = label(f); return `<div class="file"><span>${esc(a)}</span><small>${b}</small></div>`; }).join("")}
       <button class="ghost" type="button" id="folder">📁 폴더 열기</button></div>
   </div>
@@ -616,6 +620,8 @@ function render() {
       S.st.styles = r.styles; S.choices.style = ""; render();
     });
     document.querySelectorAll('input[name=sb]').forEach(r => r.onchange = () => S.choices.subtitles = r.value === "켜기");
+    document.querySelectorAll('input[name=qu]').forEach(r => r.onchange = () => S.choices.quality = r.value);
+    document.querySelectorAll('input[name=dv]').forEach(r => r.onchange = () => S.choices.device = r.value);
     $("#spd").oninput = e => S.choices.speed = +e.target.value;
     document.querySelectorAll("[data-play]").forEach(b => b.onclick = async ev => {
       ev.preventDefault(); ev.stopPropagation();

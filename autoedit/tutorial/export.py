@@ -75,9 +75,11 @@ class Exporter:
         if vertical not in ("따라가기", "전체"):
             raise ValueError("세로 영상 방식은 '따라가기' 또는 '전체' 예요.")
         self.sc, self.work, self.say, self.vertical = sc, work, log, vertical
+        self.mobile = (work / "기기.json").exists()                  # 모바일로 찍은 영상(세로는 휴대폰 화면 그대로 크게)
         self.P = load_platforms()
         base = sc.file_name
-        self.final = work / f"{base}_1440p60.mp4"
+        from .compose import main_video
+        self.final = main_video(work, base) or work / f"{base}_1440p60.mp4"      # 4K·8K 로 만들었으면 그것
         self.v1080 = work / f"{base}_1080p30.mp4"
         if not self.final.exists():
             raise ValueError("먼저 영상을 만들어 주세요(최종본이 없어요).")
@@ -198,6 +200,8 @@ class Exporter:
         # 세로(따라가기): 위 13%·아래 20%·오른쪽 버튼 자리를 피해 제목 → 단계 → 영상 1080x940 → 자막
         "세로": dict(W=1080, H=1920, vy=430, vh=940, ty=262, sy=362, uy=1392, mr=170),
         "세로전체": dict(W=1080, H=1920, vy=600, vh=608, ty=300, sy=528, uy=1260, mr=170),
+        # 모바일 영상의 세로: 휴대폰 화면을 세로 그대로 크게(누르는 곳을 따라 확대)
+        "세로모바일": dict(W=1080, H=1920, vy=336, vh=1180, vw=548, ty=196, sy=276, uy=1530, mr=170),
         "4대5": dict(W=1080, H=1350, vy=270, vh=608, ty=70, sy=198, uy=905, mr=70),
         "1대1": dict(W=1080, H=1080, vy=190, vh=608, ty=36, sy=128, uy=820, mr=70),
     }
@@ -246,7 +250,7 @@ class Exporter:
         L = self.LAYOUT[kind]
         bg = self._bg_png(L["W"], L["H"], self.cache / f"bg_{kind}.png")
         run("-loop", "1", "-i", str(bg), "-i", str(video), *audio_args,
-            "-filter_complex", f"[1:v]fps=30,scale=1080:{L['vh']}:flags=lanczos[v];[0:v][v]overlay=0:{L['vy']}:shortest=1,fps=30,"
+            "-filter_complex", f"[1:v]fps=30,scale={L.get('vw', 1080)}:{L['vh']}:flags=lanczos[v];[0:v][v]overlay={(1080 - L.get('vw', 1080)) // 2}:{L['vy']}:shortest=1,fps=30,"
                                f"ass=filename='{ff_path(ass)}':fontsdir='{ff_path(FONTS)}',format=yuv420p[o]",
             "-map", "[o]", "-map", "2:a", "-t", f"{total:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             "-pix_fmt", "yuv420p", "-g", "60", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
@@ -272,11 +276,11 @@ class Exporter:
             self._canvas(kind, self._clean_full(), ["-i", str(self.work / "narration.wav")], ass, f, tl["total"])
         return self._cached(f"{self.slug}-{kind}.mp4", make)
 
-    def body_follow(self) -> Path:
-        """세로용 본편: 녹화 원본을 누르는 곳을 따라가며 확대해 1080x940 으로 꽉 채운다(만들기 때와 같은 확대·카메라)."""
+    def body_follow(self, kind: str = "세로") -> Path:
+        """세로용 본편: 녹화 원본을 누르는 곳을 따라가며 확대해 영상 칸을 꽉 채운다(만들기 때와 같은 확대·카메라)."""
         from ..screenfx import render
         from . import rules as R
-        L = self.LAYOUT["세로"]
+        L = self.LAYOUT[kind]
 
         def make(f):
             rec = json.loads((self.work / "log_rec.json").read_text(encoding="utf-8"))
@@ -287,25 +291,27 @@ class Exporter:
             clicks = [dict(c, t=round(tb(c["t"]), 3)) for c in rec["clicks"]]
             spots = [dict(x, start=tb(x["start"]), end=tb(x["end"])) for x in rec["spots"]]
             st = ScreenFxSettings(background=tuple(self.sc.brand.background), zoom=rules["확대"], max_zoom=rules["최대확대"],
-                                  speedup=1.0, out_size=(L["W"], L["vh"]), crf=14, x264_preset="veryfast", fill=True)
+                                  speedup=1.0, out_size=(L.get("vw", L["W"]), L["vh"]), crf=14, x264_preset="veryfast", fill=True)
             render(self.work / "body_src.mp4", f, st, clicks=clicks, spots=spots, out_fps=30, log=self.say)
-        return self._cached("body_follow.mp4", make)
+        return self._cached("body_follow.mp4" if kind == "세로" else f"body_follow_{kind}.mp4", make)
 
     def v_vertical(self) -> Path:
         """짧은 세로: 결과 화면 2초 → 본편 → 연결 안내 2초. 끝과 처음이 같은 결과 화면이라 반복 재생이 이어진다.
         기본은 누르는 곳을 따라가며 확대(따라가기), 고르면 가로 화면 전체를 줄여 넣기(전체)."""
         HOOK, END = 2.0, 2.0
         kind = "세로" if self.vertical == "따라가기" else "세로전체"
+        if self.mobile and self.vertical == "따라가기":
+            kind = "세로모바일"
         name = f"{self.slug}-세로-{self.vertical}.mp4"
         L = self.LAYOUT[kind]
 
         def make(f):
             tl, w = self.tl, self.work
             body_len = tl["body"]
-            body = self.body_follow() if kind == "세로" else w / "body.mp4"
+            body = self.body_follow(kind) if kind in ("세로", "세로모바일") else w / "body.mp4"
             last = self.frame(body, body_len - 0.1, self.cache / f"result_{kind}.jpg")
             src = self.cache / f"vertical_src_{kind}.mp4"
-            sz = f"scale=1080:{L['vh']},setsar=1"
+            sz = f"scale={L.get('vw', 1080)}:{L['vh']},setsar=1"
             run("-loop", "1", "-t", f"{HOOK}", "-i", str(last), "-i", str(body), "-loop", "1", "-t", f"{END}", "-i", str(last),
                 "-filter_complex", f"[0:v]fps=30,{sz}[a];[1:v]fps=30,{sz}[b];[2:v]fps=30,{sz}[c];[a][b][c]concat=n=3:v=1:a=0[v]",
                 "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", str(src))
@@ -956,7 +962,11 @@ li p{{margin:0 0 8px;font-size:17px;display:flex;gap:8px;align-items:baseline}} 
         W, H = spec["크기"]
         res = []
         add = lambda name, ok, msg, warn=False: res.append({"이름": f"{p.name}: {name}", "판정": "ok" if ok else ("warn" if warn else "fail"), "내용": msg})
-        add("크기", (v["width"], v["height"]) == (W, H), f"{v['width']}×{v['height']} (규격 {W}×{H})")
+        if spec.get("이상"):                         # 더 큰 화질(4K·8K)도 비율이 같으면 통과
+            okz = v["width"] >= W and v["height"] >= H and v["width"] * H == v["height"] * W
+            add("크기", okz, f"{v['width']}×{v['height']} (규격 {W}×{H} 이상, 16:9)")
+        else:
+            add("크기", (v["width"], v["height"]) == (W, H), f"{v['width']}×{v['height']} (규격 {W}×{H})")
         add("프레임", abs(fps - spec["fps"]) < 0.02, f"{fps:g}fps (규격 {spec['fps']})")
         add("코덱", v["codec_name"] == codec and v.get("pix_fmt") == "yuv420p", f"{v['codec_name']} {v.get('pix_fmt')}")
         add("색", v.get("color_primaries") == "bt709", f"{v.get('color_primaries', '없음')}")
