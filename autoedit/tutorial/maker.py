@@ -15,10 +15,12 @@ STAGES = ("목소리", "리허설", "녹화", "편집")
 
 def narrate(sc: Scenario, work: Path, log=print) -> dict:
     """문장별 나레이션 → narration.json {키: [문장, wav, 길이]}.
-    문장·목소리가 그대로면 만든 소리를 다시 쓰고, 바뀌었으면 새로 만든다."""
+    문장·목소리가 그대로면 만든 소리를 다시 쓰고, 바뀌었으면 새로 만든다.
+    목소리는 AI 목소리·자막만·내 목소리·유료 API 중 하나(voices.py) — 그 뒤 단계는 종류를 모른다."""
     from .. import narration as N
+    from . import voices as V
     out, meta_p = work / "narration.json", work / "narration_voice.json"
-    meta = {"voice": sc.brand.voice, "rate": sc.brand.voice_rate}
+    meta = V.fingerprint(sc.brand.voice, sc.brand.voice_rate, work)
     if out.exists():
         nar = json.loads(out.read_text(encoding="utf-8"))
         same_text = {k: v[0] for k, v in nar.items()} == {l.key: l.text for l in sc.lines()}
@@ -26,7 +28,7 @@ def narrate(sc: Scenario, work: Path, log=print) -> dict:
         if same_text and same_voice and all(Path(v[1]).exists() for v in nar.values()):
             return nar
     lines = [N.Line(l.key, l.text, l.rate, l.pitch) for l in sc.lines()]
-    N.synthesize(lines, (work / "narration").resolve(), voice=sc.brand.voice, base_rate=sc.brand.voice_rate, log=log)
+    V.synthesize(lines, work, (work / "narration").resolve(), sc.brand.voice, sc.brand.voice_rate, log=log)
     nar = {l.key: [l.text, l.path, l.duration] for l in lines}
     out.write_text(json.dumps(nar, ensure_ascii=False, indent=1), encoding="utf-8")
     meta_p.write_text(json.dumps(meta))
@@ -80,7 +82,10 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
     check: 발음 검사·자동 검수를 한다(1편 재현 검사처럼 영상만 필요할 때는 끔)."""
     from . import qa
     from . import rules as R
+    from . import voices as V
     work.mkdir(parents=True, exist_ok=True)
+    if sc.brand.voice == V.SILENT:
+        subtitles = True                                # 목소리 없이 자막만이면 자막은 꼭 넣는다
     rules = rules or R.merged(R.load_user(), sc.brand.rules, sc.rules)
     warn = R.apply(sc, rules)
     for w in warn:
@@ -94,7 +99,7 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
     reuse = "녹화" in stages and (work / "cap.mkv").exists() and kp.exists() and kp.read_text(encoding="utf-8") == rkey \
         and (work / "sync.json").exists() and (work / "log_rec.json").exists()
     est = estimate(sc, dur, stages, reuse, preview, check)
-    if check and "목소리" in stages:
+    if check and "목소리" in stages and sc.brand.voice != V.SILENT:     # 자막만이면 들을 소리가 없음
         stage("발음 검사", est)
         qa.pronunciation(sc, nar, work, log=log)
     if allow_real and any(s.real_save for s in sc.scenes):

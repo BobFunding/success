@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 import mimetypes
 import os
 import platform
@@ -28,11 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = Path(__file__).parent / "web"
 PROJECTS = ROOT / "output" / "tutorial"
 EXAMPLE = ROOT / "tutorials" / "ep1" / "scenario.yaml"
-VOICES = [  # (이름, 목소리, 기본 빠르기)
-    ("현수 · 차분", "ko-KR-HyunsuMultilingualNeural", -8),
-    ("선희 · 밝게", "ko-KR-SunHiNeural", 0),
-    ("인준 · 또박또박", "ko-KR-InJoonNeural", -4),
-]
+from . import voices as V   # 목소리 목록(AI·유료·내 목소리·자막만)은 voices.py
 
 
 def work_dir(scn: Path) -> Path:
@@ -178,7 +175,9 @@ def project_view(path: Path) -> dict:
     exp = w / "내보내기" / "점검.json"
     export = json.loads(exp.read_text(encoding="utf-8")) if exp.exists() else None
     return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "secrets": secrets_needed, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
-            "choices": choices, "export": export, "platforms": platforms_view(), "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
+            "choices": choices, "export": export,
+            "lines": [{"key": l.key, "text": l.text} for l in sc.lines()] if sc else [],
+            "my_voice": [l.key for l in sc.lines() if not V.my_voice_missing([l], w)] if sc else [], "platforms": platforms_view(), "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
 
 
 def save_project(path: Path, d: dict) -> Path:
@@ -201,9 +200,9 @@ def scenario_with_choices(path: Path, ch: dict) -> S.Scenario:
         keep = sc.brand
         sc.brand = S.load_brand("basic")
         sc.brand.spoken, sc.brand.name = keep.spoken, keep.name   # 이름 표기는 그대로, 모양만 기본
-    v = next((v for v in VOICES if v[0] == ch.get("voice")), None)
+    v = V.find(ch.get("voice", ""))
     if v:
-        sc.brand.voice, sc.brand.voice_rate = v[1], v[2]
+        sc.brand.voice, sc.brand.voice_rate = v["voice"], v["rate"]
     sc.brand.voice_rate += int(ch.get("speed", 0))
     return sc
 
@@ -266,16 +265,55 @@ def platforms_view() -> list[dict]:
             for k, p in load_platforms()["올릴곳"].items()]
 
 
+KEYS = {"openai": "openai.com|api_key", "anthropic": "anthropic.com|api_key"}   # 보관함 열쇠
+
+
+def keys_view() -> dict:
+    from . import secrets as SEC
+    env = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+    return {k: bool(os.environ.get(env[k]) or SEC.get(v)) for k, v in KEYS.items()}
+
+
+def save_my_voice(path: Path, key: str, data: str) -> dict:
+    """화면에서 녹음한 한 문장을 작업 폴더 my_voice/<키>.webm 으로. 키는 장면 표에 있는 것만."""
+    import base64
+    sc = S.load(path)
+    if key not in {l.key for l in sc.lines()}:
+        return {"ok": False, "error": "없는 문장이에요."}
+    raw = base64.b64decode(data.split(",", 1)[-1])
+    if len(raw) < 2000:
+        return {"ok": False, "error": "녹음이 너무 짧아요. [● 녹음]을 누르고 문장을 읽은 뒤 [■ 멈춤]을 눌러 주세요."}
+    d = V.my_voice_dir(work_dir(path))
+    d.mkdir(parents=True, exist_ok=True)
+    for e in (".webm", ".wav", ".ogg", ".m4a"):
+        (d / f"{key}{e}").unlink(missing_ok=True)
+    ext = ".ogg" if data.startswith("data:audio/ogg") else ".m4a" if "mp4" in data[:40] else ".webm"
+    (d / f"{key}{ext}").write_bytes(raw)
+    return {"ok": True}
+
+
 def voice_preview(path: Path, voice_name: str, speed: int) -> str:
+    """실제 첫 문장을 그 목소리로. 자막만이면 소리 없음(''), 내 목소리는 녹음한 첫 문장."""
     from .. import narration as N
     sc = S.load(path)
-    v = next((v for v in VOICES if v[0] == voice_name), VOICES[0])
-    first = (sc.scenes[0].line if sc.scenes else sc.lines()[0])
-    out = work_dir(path) / "preview"
-    ln = N.Line(f"preview_{VOICES.index(v)}_{speed}", first.text, first.rate, first.pitch)
+    v = V.find(voice_name) or V.choices()[0]
+    first = (sc.scenes[0] if sc.scenes else sc.lines()[0])
+    line = first.line if sc.scenes else first
+    if v["voice"] == V.SILENT:
+        return ""
+    w = work_dir(path)
+    out = w / "preview"
+    if v["voice"] == V.MINE:
+        if V.my_voice_missing([line], w):
+            return ""
+        ln = N.Line(line.key, line.text)
+        V.mine([ln], w, out.resolve())
+        return ln.path
+    tag = re.sub(r"[^\w]", "_", v["voice"])
+    ln = N.Line(f"preview_{tag}_{speed}", line.text, line.rate, line.pitch)
     wav = out / f"{ln.key}.wav"
     if not wav.exists():
-        N.synthesize([ln], out.resolve(), voice=v[1], base_rate=v[2] + speed, log=lambda *a: None)
+        V.synthesize([ln], w, out.resolve(), v["voice"], v["rate"] + speed, log=lambda *a: None)
     return str(wav)
 
 
@@ -373,13 +411,17 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/api/state":
-                return self.json({"projects": list_projects(), "brands": S.brand_names(), "voices": [v[0] for v in VOICES],
+                return self.json({"projects": list_projects(), "brands": S.brand_names(), "voices": [v["name"] for v in V.choices()], "voice_list": V.choices(), "keys": keys_view(),
                                   "rules": R.merged(R.load_user()), "default_rules": R.DEFAULT, "job": JOB.view(),
                                   "capture": __import__("autoedit.tutorial.capture", fromlist=["x"]).capture_method()})
             if u.path == "/api/project":
                 return self.json(project_view(Path(q["path"])))
             if u.path == "/api/job":
                 return self.json(JOB.view())
+            if u.path == "/api/myvoice/file":
+                d = V.my_voice_dir(work_dir(Path(q["path"])))
+                f = next((d / f"{q['key']}{e}" for e in (".webm", ".wav", ".ogg", ".m4a") if (d / f"{q['key']}{e}").exists()), None)
+                return self.json({"file": str(f) if f else ""})
             if u.path == "/api/brand":
                 return self.json(brand_view(q.get("name") or "taekwonworld"))
             if u.path == "/file":
@@ -422,6 +464,14 @@ class Handler(BaseHTTPRequestHandler):
                 ok = JOB.start("export", lambda j: job_export(j, Path(b["path"]), dests, b.get("choices", {}),
                                                                  "전체" if b.get("vertical") == "전체" else "따라가기"), path=b["path"])
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/key":
+                from . import secrets as SEC
+                name, val = str(b.get("name", "")), str(b.get("value", "")).strip()
+                if name not in KEYS or len(val) < 20:
+                    return self.json({"ok": False, "error": "키 모양이 아니에요. 키 받는 곳에서 복사한 값을 그대로 붙여 넣어 주세요."})
+                return self.json({"ok": True, "where": SEC.put(KEYS[name], val)})
+            if u.path == "/api/myvoice":
+                return self.json(save_my_voice(Path(b["path"]), str(b["key"]), str(b["data"])))
             if u.path == "/api/answer":
                 return self.json({"ok": JOB.answer(str(b.get("value", "")))})
             if u.path == "/api/secret":

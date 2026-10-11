@@ -200,12 +200,16 @@ function viewChoose() {
   const brand = c.brand || (saved && S.st.brands.includes(saved) ? saved : (S.proj.scenario["브랜드"] || "basic"));
   c.brand = brand;
   const brandName = brand === "taekwonworld" ? "태권월드" : brand;
-  const voices = S.st.voices.map(v => `<label class="opt"><input type="radio" name="v" value="${esc(v)}" ${v === c.voice ? "checked" : ""}><span>${esc(v)} <em class="play" data-play="${esc(v)}">▶ 첫 문장 듣기</em></span></label>`).join("")
-    + `<label class="opt"><input type="radio" name="v" disabled><span>내 목소리로 녹음 <em class="soon">준비 중</em></span></label>`
-    + `<label class="opt"><input type="radio" name="v" disabled><span>목소리 없이 자막만 <em class="soon">준비 중</em></span></label>`;
+  const VL = S.st.voice_list || S.st.voices.map(n => ({ name: n, kind: "ai" }));
+  const sel = VL.find(v => v.name === c.voice) || VL[0];
+  const voices = VL.map(v => `<label class="opt"><input type="radio" name="v" value="${esc(v.name)}" ${v.name === sel.name ? "checked" : ""}><span>${esc(v.name)}${
+      v.kind === "ai" || v.kind === "paid" ? ` <em class="play" data-play="${esc(v.name)}">▶ 첫 문장 듣기</em>` : ""}${v.kind === "paid" ? ' <em class="soon">유료</em>' : ""}</span></label>`).join("");
+  const mine = sel.kind === "mine" ? myVoicePanel() : "";
+  const paidHint = VL.some(v => v.kind === "paid") ? "" : '<div class="hint" style="margin-top:6px">유료 음성(OpenAI)은 ⚙ 설정 → 규칙 탭 아래 \'유료 음성 키\'에 키를 넣으면 여기에 추가돼요.</div>';
+  const silentHint = sel.kind === "silent" ? '<div class="hint" style="margin-top:6px">소리 없이 자막으로만 안내해요. 문장마다 읽을 시간을 자동으로 잡고, 자막은 꼭 켜져요.</div>' : "";
   return `<section class="card"><h2>만들기 전에 골라 주세요</h2>
   <p class="lead">추천값이 이미 골라져 있어요. 그대로 [만들기]를 눌러도 됩니다.</p>
-  <div class="group"><div class="k">목소리</div><div><div class="opts">${voices}</div><audio id="aud" hidden></audio><div class="hint" id="playHint"></div></div></div>
+  <div class="group"><div class="k">목소리</div><div><div class="opts">${voices}</div><audio id="aud" hidden></audio><div class="hint" id="playHint"></div>${silentHint}${mine}${paidHint}</div></div>
   <div class="group"><div class="k">영상 모양</div><div class="opts">${radios("sh", ["가로 · 유튜브", "세로 · 쇼츠", "둘 다"], "가로 · 유튜브", ["세로 · 쇼츠", "둘 다"])}</div></div>
   <div class="group"><div class="k">꾸미기</div><div><div class="opts">
     ${brand === "basic" ? "" : `<label class="opt"><input type="radio" name="dc" value="brand" ${c.deco !== "basic" ? "checked" : ""}><span>우리 브랜드 · ${esc(brandName)}</span></label>`}
@@ -221,6 +225,36 @@ function viewChoose() {
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button>
   <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="ghost" type="button" id="quick" title="저화질로 먼저 빠르게 봅니다. 녹화는 최종본에서 그대로 다시 써요.">빠른 미리보기</button>
   <button class="primary" type="button" id="next">만들기 →</button></span></div>`;
+}
+
+// 내 목소리로 녹음: 문장이 하나씩 보이고 [● 녹음] → 읽고 → [■ 멈춤]. 잡음·앞뒤 무음 정리와 음량은 만들 때 자동
+function myVoicePanel() {
+  const lines = S.proj.lines || [], done = new Set(S.proj.my_voice || []);
+  const left = lines.filter(l => !done.has(l.key)).length;
+  return `<div class="myvoice" style="margin-top:var(--s2)"><div class="${left ? "verdict has-warn" : "summary"}" style="margin-bottom:var(--s1)">${left ? `🎙 ${left}문장 남았어요 · 조용한 곳에서 마이크에 대고 읽어 주세요` : `✓ ${lines.length}문장 모두 녹음했어요`}</div>
+    <div class="qa">${lines.map(l => `<div><span>${esc(l.text)}</span><span style="display:flex;gap:6px;flex-shrink:0">
+      ${done.has(l.key) ? `<button class="ghost" type="button" data-mvplay="${esc(l.key)}">▶</button>` : ""}
+      <button class="${done.has(l.key) ? "ghost" : "primary"}" type="button" data-mvrec="${esc(l.key)}">${S.recKey === l.key ? "■ 멈춤" : done.has(l.key) ? "다시" : "● 녹음"}</button></span></div>`).join("")}</div></div>`;
+}
+async function myVoiceToggle(key) {
+  if (S.recKey === key && S.rec) { S.rec.stop(); return; }
+  if (S.rec) return;
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (_) { alert("마이크를 쓸 수 없어요. 브라우저 주소창 왼쪽에서 마이크를 허용해 주세요."); return; }
+  const chunks = [], rec = new MediaRecorder(stream);
+  rec.ondataavailable = e => chunks.push(e.data);
+  rec.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+    const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+    S.rec = null; S.recKey = null;
+    const r = await api("/api/myvoice", { path: S.proj.path, key, data });
+    if (!r.ok) alert(r.error || "저장하지 못했어요.");
+    S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path)));
+    render();
+  };
+  S.rec = rec; S.recKey = key; rec.start(); render();
 }
 
 // ── 4. 만들기 ──
@@ -373,7 +407,12 @@ function render() {
     on("#next", () => go(2));
   }
   if (S.cur === 2) {
-    document.querySelectorAll('input[name=v]').forEach(r => r.onchange = () => S.choices.voice = r.value);
+    document.querySelectorAll('input[name=v]').forEach(r => r.onchange = () => { S.choices.voice = r.value; render(); });
+    document.querySelectorAll("[data-mvrec]").forEach(b => b.onclick = () => myVoiceToggle(b.dataset.mvrec));
+    document.querySelectorAll("[data-mvplay]").forEach(b => b.onclick = async () => {
+      const r = await api("/api/myvoice/file?path=" + encodeURIComponent(S.proj.path) + "&key=" + encodeURIComponent(b.dataset.mvplay));
+      if (r.file) { const a = $("#aud"); a.src = fileUrl(r.file); a.play(); }
+    });
     document.querySelectorAll('input[name=dc]').forEach(r => r.onchange = () => S.choices.deco = r.value);
     document.querySelectorAll('input[name=sb]').forEach(r => r.onchange = () => S.choices.subtitles = r.value === "켜기");
     $("#spd").oninput = e => S.choices.speed = +e.target.value;
@@ -459,6 +498,19 @@ function startPoll() {
   }, 1000);
 }
 
+// 키(선택): 넣으면 그 기능만 켜진다. 값은 PC 안 보관함에만, 화면에는 다시 보이지 않음
+function keysPanel() {
+  const K = S.st.keys || {};
+  const row = (name, label, where, use) => `<div class="group"><div class="k">${label}</div><div>
+    ${K[name] ? `<div class="summary">✓ 연결됨 · ${use}</div>` : `<div class="inline"><input type="password" data-keyin="${name}" placeholder="키 붙여 넣기" autocomplete="off" style="flex:1">
+      <button class="ghost" type="button" data-keysave="${name}">저장</button></div>
+      <div class="hint">① <a href="${where}" target="_blank" rel="noopener">키 받는 곳 열기</a> ② 붙여 넣기 ③ 저장 → ${use}</div>`}</div></div>`;
+  return `<details style="margin-top:var(--s3)"><summary>AI·유료 음성 키<span>없어도 모든 기본 기능은 그대로</span></summary><div style="padding:0 14px 8px">
+    ${row("anthropic", "AI 도우미 (Claude)", "https://console.anthropic.com/settings/keys", "AI에게 맡기기·문장 다듬기·번역")}
+    ${row("openai", "유료 음성 (OpenAI)", "https://platform.openai.com/api-keys", "목소리 목록에 OpenAI 목소리 추가")}
+    <div class="hint">키는 이 PC 의 보관함에만 저장돼요. 쓰는 만큼 제공자에게 비용이 나가요.</div></div></details>`;
+}
+
 // ── ⚙ 설정: 브랜드 · 규칙 ──
 function lum(h) { const c = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255).map(x => x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; }
 function contrast(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); }
@@ -489,7 +541,7 @@ async function renderBrand(name) {
       <label class="f" for="bz">확대 배율 (1.0~2.0)<input type="number" id="bz" min="1" max="2" step="0.1" value="${(d["규칙"] || {})["확대"] || 1.6}"></label></div></details>
     <div id="readable"></div>
     <div class="foot"><span class="hint">${b.builtin ? "기본 제공 브랜드를 고치면 이 PC에 사본으로 저장돼요." : ""}</span><button class="primary" type="button" id="saveBrand">저장</button></div>`;
-  const voiceName = { "ko-KR-HyunsuMultilingualNeural": "현수 · 차분", "ko-KR-SunHiNeural": "선희 · 밝게", "ko-KR-InJoonNeural": "인준 · 또박또박" }[d["목소리"]];
+  const voiceName = ((S.st.voice_list || []).find(v => v.voice === d["목소리"]) || {}).name;
   if (voiceName) $("#bv").value = voiceName;
   const check = () => {
     const c1 = $("#c1").value, c2 = $("#c2").value, p = $("#c4").value;
@@ -506,7 +558,8 @@ async function renderBrand(name) {
     else renderBrand(r.value);
   });
   $("#saveBrand").onclick = async () => {
-    const VO = { "현수 · 차분": ["ko-KR-HyunsuMultilingualNeural", -8], "선희 · 밝게": ["ko-KR-SunHiNeural", 0], "인준 · 또박또박": ["ko-KR-InJoonNeural", -4] }[$("#bv").value];
+    const vv = (S.st.voice_list || []).find(v => v.name === $("#bv").value) || { voice: "ko-KR-HyunsuMultilingualNeural", rate: -8 };
+    const VO = [vv.voice, vv.rate];
     const nd = Object.assign({}, d, { "이름": $("#bn").value, "읽는이름": $("#br").value || $("#bn").value, "배경": [$("#c1").value, $("#c2").value],
       "강조색": $("#c3").value, "포인트색": $("#c4").value, "목소리": VO[0], "목소리빠르기": VO[1], "말투": $("#bt").value,
       "인사말": $("#bh").value, "고정문구": $("#be").value, "규칙": Object.assign({}, d["규칙"] || {}, { "확대": Math.min(2, Math.max(1, +$("#bz").value || 1.6)) }) });
@@ -530,7 +583,8 @@ function renderRules() {
       </div><button class="ghost" type="button" id="repAdd" style="margin-top:6px">＋ 추가</button></div>
     <label class="f" for="rl5">확대 배율 (1.0~2.0)<input type="number" id="rl5" min="1" max="2" step="0.1" value="${r["확대"]}"></label>
     <div class="verdict">🔒 개인정보 흐림 · 저장·발송 차단은 항상 켜져 있어요</div>
-    <div class="foot"><button class="ghost" type="button" id="resetRules">1편 기준으로 되돌리기</button><button class="primary" type="button" id="saveRules">저장</button></div>`;
+    <div class="foot"><button class="ghost" type="button" id="resetRules">1편 기준으로 되돌리기</button><button class="primary" type="button" id="saveRules">저장</button></div>
+    ${keysPanel()}`;
   const collect = () => {
     const rp = {};
     document.querySelectorAll("[data-ra]").forEach(a => { const b = document.querySelector(`[data-rb="${a.dataset.ra}"]`); if (a.value.trim()) rp[a.value.trim()] = b.value.trim(); });
@@ -539,6 +593,13 @@ function renderRules() {
   $("#repAdd").onclick = () => { S.st.rules = Object.assign(collect(), {}); S.st.rules["표현바꾸기"][""] = ""; renderRules(); };
   document.querySelectorAll("[data-rx]").forEach(x => x.onclick = () => { const c = collect(); delete c["표현바꾸기"][Object.keys(c["표현바꾸기"])[+x.dataset.rx]]; S.st.rules = c; renderRules(); });
   $("#saveRules").onclick = async () => { const res = await api("/api/rules/save", { rules: collect() }); S.st.rules = res.rules; $("#drawer").hidden = true; };
+  document.querySelectorAll("[data-keysave]").forEach(b => b.onclick = async () => {
+    const inp = document.querySelector(`[data-keyin="${b.dataset.keysave}"]`), v = inp.value.trim();
+    if (!v) return;
+    const r = await api("/api/key", { name: b.dataset.keysave, value: v });
+    if (!r.ok) { alert(r.error); return; }
+    await loadState(); renderRules();
+  });
   $("#resetRules").onclick = async () => { const res = await api("/api/rules/reset", {}); S.st.rules = res.rules; renderRules(); };
 }
 $("#settingsBtn").onclick = () => { $("#drawer").hidden = false; renderBrand(); renderRules(); };
