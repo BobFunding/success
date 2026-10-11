@@ -335,7 +335,10 @@ def update_check() -> dict:
 
 def update_apply() -> dict:
     """버튼 하나로 업데이트: 내 작업(output/·보관함·브랜드)은 그대로 두고 프로그램만 받는다(내가 고친 프로그램 파일이 있으면 멈춤)."""
-    r = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only", "-q"], capture_output=True, text=True, timeout=120)
+    try:
+        r = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only", "-q"], capture_output=True, text=True, timeout=120)
+    except Exception as e:                            # git 이 없는 PC(Windows 기본)
+        return {"ok": False, "error": f"업데이트 도구(git)가 없어요({type(e).__name__}). GitHub 에서 새로 받아 주세요."}
     if r.returncode:
         return {"ok": False, "error": "업데이트하지 못했어요. 프로그램 파일을 직접 고쳤다면 개발자에게 물어봐 주세요.\n" + r.stderr[-300:]}
     return {"ok": True, "msg": "업데이트했어요. 창을 닫고 프로그램을 다시 켜 주세요."}
@@ -585,6 +588,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not items:
                     return self.json({"ok": False, "error": "만들 작업을 하나 이상 골라 주세요."})
                 ok = JOB.start("batch", lambda j: job_batch(j, items), count=0)
+                return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/selfcheck":
+                from . import selfcheck
+                full = bool(b.get("ep1"))
+                ok = JOB.start("selfcheck", lambda j: selfcheck.run(full=full, log=j.log, on_stage=j.stage), count=0)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
             if u.path == "/api/update/check":
                 return self.json(update_check())

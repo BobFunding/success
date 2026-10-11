@@ -5,11 +5,18 @@ python tutorial.py make tutorials/ep1/scenario.yaml              # 처음부터 
 python tutorial.py make tutorials/ep1/scenario.yaml --only 편집  # 일부 단계만 (목소리, 리허설, 녹화, 편집)
 python tutorial.py check tutorials/ep1/scenario.yaml             # 장면 표 검사 + 리허설
 python tutorial.py demo https://example.com --topic "회원가입"   # 한 번 해 보이기 → 장면 표
-python tutorial.py repro                                         # 1편 재현 검사
+python tutorial.py repro                                         # 1편 재현 검사(Linux)
+python tutorial.py selfcheck [--ep1]                             # 자가 점검(이 PC에서 제대로 도는지)
 """
 import argparse
 import sys
 from pathlib import Path
+
+for _s in (sys.stdout, sys.stderr):        # Windows 명령창(cp949)에서 한글·기호가 깨지거나 멈추지 않게
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from autoedit.tutorial import maker, scenario
 
@@ -45,6 +52,8 @@ def main() -> int:
     x.add_argument("--site", default="", help="링크 주소 (기본: 장면 표의 사이트)")
     x.add_argument("--vertical", default="따라가기", choices=("따라가기", "전체"),
                    help="세로 영상: 누르는 곳을 따라가며 확대(기본) / 가로 화면 전체를 줄여 넣기")
+    k = sub.add_parser("selfcheck", help="자가 점검: 이 PC에서 제대로 도는지(부품 → 짧은 영상 → --ep1 이면 1편 재현)")
+    k.add_argument("--ep1", action="store_true", help="1편까지 만들어 기준 기록과 비교(오래 걸림, 인터넷 필요)")
     a = ap.parse_args()
 
     if a.cmd == "ui":
@@ -64,6 +73,12 @@ def main() -> int:
         save(sc, out)
         print(f"장면 {len(sc['장면'])}개를 만들었어요: {out}\n'말'을 다듬은 뒤: python tutorial.py make {out}")
         return 0
+    if a.cmd == "selfcheck":
+        from autoedit.tutorial import selfcheck
+        rep = selfcheck.run(full=a.ep1, on_stage=lambda n: print(f"── {n}", flush=True))
+        print(rep["글"])
+        print("\n결과 파일: output/자가점검/자가점검결과.md (그대로 복사해 보내 주세요)")
+        return 0 if rep["판정"] == "ok" else 1
     if a.cmd == "repro":
         from autoedit.tutorial import repro
         return 0 if repro.main(Path(a.work), a.only) else 1

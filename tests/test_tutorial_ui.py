@@ -295,3 +295,20 @@ def test_composer_quality_sizes():
     from autoedit.tutorial import compose as C
     assert C.QUALITY == {"1440p": 1.0, "4K": 1.5, "8K": 3.0}
     assert {k: (int(C.W * v), int(C.H * v)) for k, v in C.QUALITY.items()} == {"1440p": (2560, 1440), "4K": (3840, 2160), "8K": (7680, 4320)}
+
+
+def test_selfcheck_reference_compare(tmp_path):
+    import json as J
+    from autoedit.tutorial import selfcheck as C
+    ref = J.loads((C.REF / "log_rec.json").read_text(encoding="utf-8"))
+    dur = J.loads((C.REF / "narration_durations.json").read_text(encoding="utf-8"))
+    tl = J.loads((C.REF / "timeline.json").read_text(encoding="utf-8"))
+    (tmp_path / "log_rec.json").write_text(J.dumps(ref), encoding="utf-8")
+    (tmp_path / "narration.json").write_text(J.dumps({k: ["", "", v] for k, v in dur.items()}), encoding="utf-8")
+    (tmp_path / "timeline.json").write_text(J.dumps(tl), encoding="utf-8")
+    assert all(i["판정"] == "ok" for i in C.compare_reference(tmp_path))          # 기준과 같으면 통과
+    ref["clicks"][3]["x"] += 50                                                   # 누른 자리가 크게 다르면
+    (tmp_path / "log_rec.json").write_text(J.dumps(ref), encoding="utf-8")
+    bad = {i["이름"]: i["판정"] for i in C.compare_reference(tmp_path)}
+    assert bad["1편: 누른 자리·밝게 할 곳"] == "fail"
+    assert "localhost:PORT" in C.SAMPLE_SCENARIO and (C.SAMPLE / "join.html").exists()

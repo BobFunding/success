@@ -732,6 +732,20 @@ function startPoll() {
   }, 1000);
 }
 
+// 자가 점검: 이 PC에서 제대로 도는지 버튼 하나로(부품 → 짧은 영상 → 원하면 1편 재현)
+function checkPanel() {
+  const j = S.job || {}, mine = j.kind === "selfcheck";
+  const r = mine && !j.running && j.ok ? j.result : null;
+  const rows = r ? r["항목"].map(i => `<div><span>${esc(i["이름"])}</span><span class="chip ${i["판정"] === "ok" ? "ok" : "warn"}">${i["판정"] === "ok" ? "✓" : "⚠"} ${esc(i["내용"])}</span></div>`).join("") : "";
+  return `<details style="margin-top:var(--s2)" ${mine ? "open" : ""}><summary>🩺 자가 점검<span>이 PC에서 제대로 도는지 확인 (처음 설치했을 때 한 번)</span></summary><div style="padding:0 14px 8px">
+    ${mine && j.running ? `<div class="summary"><span>점검 중 · ${esc(j.stage || "")}</span><small>짧은 영상까지 3~5분, 1편 재현은 30분 이상</small></div>`
+      : `<div class="inline"><button class="primary" type="button" id="ckGo">점검하기 (약 5분)</button><button class="ghost" type="button" id="ckGo1">1편 재현까지 (30분 이상)</button></div>`}
+    ${mine && !j.running && j.ok === false ? `<div class="verdict has-warn">⚠ ${esc(j.error)}</div>` : ""}
+    ${r ? `<div class="${r["판정"] === "ok" ? "summary" : "verdict has-warn"}" style="margin-top:var(--s1)">${r["판정"] === "ok" ? "✓ 이 PC에서 잘 돌아가요" : "⚠ 확인이 필요한 곳이 있어요"} · ${esc(r["컴퓨터"])}</div>
+      <div class="qa">${rows}</div><div class="foot"><span class="hint">결과는 output/자가점검/자가점검결과.md 에도 있어요</span><button class="ghost" type="button" id="ckCopy">결과 복사</button></div>` : ""}
+  </div></details>`;
+}
+
 // 키(선택): 넣으면 그 기능만 켜진다. 값은 PC 안 보관함에만, 화면에는 다시 보이지 않음
 function keysPanel() {
   const K = S.st.keys || {};
@@ -743,6 +757,15 @@ function keysPanel() {
     ${row("anthropic", "AI 도우미 (Claude)", "https://console.anthropic.com/settings/keys", "AI에게 맡기기·문장 다듬기·번역")}
     ${row("openai", "유료 음성 (OpenAI)", "https://platform.openai.com/api-keys", "목소리 목록에 OpenAI 목소리 추가")}
     <div class="hint">키는 이 PC 의 보관함에만 저장돼요. 쓰는 만큼 제공자에게 비용이 나가요.</div></div></details>`;
+}
+
+function pollCheck() {
+  clearInterval(S.ckPoll);
+  S.ckPoll = setInterval(async () => {
+    S.job = await api("/api/job");
+    if (!$("#drawer").hidden) renderRules();
+    if (!S.job.running) clearInterval(S.ckPoll);
+  }, 1500);
 }
 
 // ── ⚙ 설정: 브랜드 · 규칙 ──
@@ -818,7 +841,8 @@ function renderRules() {
     <label class="f" for="rl5">확대 배율 (1.0~2.0)<input type="number" id="rl5" min="1" max="2" step="0.1" value="${r["확대"]}"></label>
     <div class="verdict">🔒 개인정보 흐림 · 저장·발송 차단은 항상 켜져 있어요</div>
     <div class="foot"><button class="ghost" type="button" id="resetRules">1편 기준으로 되돌리기</button><button class="primary" type="button" id="saveRules">저장</button></div>
-    ${keysPanel()}`;
+    ${keysPanel()}
+    ${checkPanel()}`;
   const collect = () => {
     const rp = {};
     document.querySelectorAll("[data-ra]").forEach(a => { const b = document.querySelector(`[data-rb="${a.dataset.ra}"]`); if (a.value.trim()) rp[a.value.trim()] = b.value.trim(); });
@@ -827,6 +851,9 @@ function renderRules() {
   $("#repAdd").onclick = () => { S.st.rules = Object.assign(collect(), {}); S.st.rules["표현바꾸기"][""] = ""; renderRules(); };
   document.querySelectorAll("[data-rx]").forEach(x => x.onclick = () => { const c = collect(); delete c["표현바꾸기"][Object.keys(c["표현바꾸기"])[+x.dataset.rx]]; S.st.rules = c; renderRules(); });
   $("#saveRules").onclick = async () => { const res = await api("/api/rules/save", { rules: collect() }); S.st.rules = res.rules; $("#drawer").hidden = true; };
+  const ck = async ep1 => { const r = await api("/api/selfcheck", { ep1 }); if (!r.ok) { alert(r.error); return; } S.job = { kind: "selfcheck", running: true }; renderRules(); pollCheck(); };
+  if ($("#ckGo")) { $("#ckGo").onclick = () => ck(false); $("#ckGo1").onclick = () => ck(true); }
+  if ($("#ckCopy")) $("#ckCopy").onclick = () => { try { navigator.clipboard.writeText(S.job.result["글"]); alert("복사했어요."); } catch (_) { prompt("복사해 주세요", S.job.result["글"]); } };
   document.querySelectorAll("[data-keysave]").forEach(b => b.onclick = async () => {
     const inp = document.querySelector(`[data-keyin="${b.dataset.keysave}"]`), v = inp.value.trim();
     if (!v) return;
