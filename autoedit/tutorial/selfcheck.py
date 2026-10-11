@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parents[2]
 REF = ROOT / "tutorials" / "ep1" / "reference"
 SAMPLE = ROOT / "tutorials" / "sample_site"
 TOL_XY_OS = 8          # px(녹화 픽셀): 운영체제마다 글꼴·글자 폭이 조금 달라 생기는 차이
-TOL_T_OS = 0.35        # 초: 다른 PC·다른 녹화 방식(한 장씩 찍기)의 장면 안 박자
+TOL_T_OS = 0.6         # 초: 장면 안 박자. 2026-10-11 실측 — 같은 PC 원래 코드끼리 0.20~0.26초, 한 장씩 찍기 ↔ 운영체제 화면 녹화
+                       # 0.53초(글자 입력·목록 고르기에서 화면을 실제로 그리는 녹화가 조금 더 느림). 그래서 0.6초
 TOL_DUR = 0.15         # 초: 문장 길이(같은 목소리면 거의 같음)
 
 
@@ -159,7 +160,7 @@ def compare_reference(work: Path) -> list[dict]:
     r = compare_logs(ref, mine, tol_t=99)
     same = r["clicks"][0] == r["clicks"][1] and r["spots"][0] == r["spots"][1] and r["lines"][0] and r["scene_events"]
     out.append(_item("1편: 장면·클릭 수", same, f"클릭 {r['clicks'][1]}/{r['clicks'][0]}, 밝게 {r['spots'][1]}/{r['spots'][0]}"))
-    xy = max(r["click_xy"], r["spot_box"])
+    xy = round(max(r["click_xy"], r["spot_box"]), 1)
     out.append(_item("1편: 누른 자리·밝게 할 곳", xy <= TOL_XY_OS, f"차이 최대 {xy:.1f}px (허용 {TOL_XY_OS}px — 글꼴 차이)",
                      "warn" if TOL_XY_OS < xy <= 30 else None))
     out.append(_item("1편: 장면 안 박자", r["scene_t"] <= TOL_T_OS, f"{r['scene_t']:.3f}초 (허용 {TOL_T_OS}초)"))
