@@ -247,6 +247,17 @@ class Recorder:
             self.sleep(d)
 
     def scroll_to(self, y, sec=0.9):
+        if self.frames:
+            # 한 장씩 찍기: 브라우저 안에서 한 번에 굴리면 그동안 사진을 못 찍고(화면이 건너뜀), 창 없는 브라우저는
+            # 그리기를 쉬어 requestAnimationFrame 이 멈추기도 한다(1편 F1 에서 멈춤, 2026-10-11) → 한 걸음씩 옮기며 찍는다
+            s = self.pg.evaluate("scrollY")
+            n = max(8, int(sec * 30))
+            for i in range(1, n + 1):
+                p = i / n
+                e = 4 * p ** 3 if p < .5 else 1 - (-2 * p + 2) ** 3 / 2      # 위와 같은 부드러운 시작·끝
+                self.pg.evaluate("y => scrollTo(0, y)", s + (y - s) * e)
+                self.sleep(sec / n)
+            return
         self.pg.evaluate("""([y, ms]) => new Promise(res => { const s = scrollY, t0 = performance.now();
           const f = n => { const p = Math.min(1, (n - t0) / ms), e = p < .5 ? 4*p*p*p : 1 - Math.pow(-2*p + 2, 3) / 2;
             scrollTo(0, s + (y - s) * e); p < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); })""",
