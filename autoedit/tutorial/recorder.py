@@ -28,6 +28,51 @@ DEVICES = {
     "갤럭시": {"viewport": (412, 915), "scale": 2.625, "ua": "Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"},
 }
+class _Timed:
+    """한 장씩 찍기에서 브라우저 동작(누르기·글자 하나·목록 고르기·기다리기)이 걸린 실제 시간을 장면 시각에 그대로 셈한다.
+    운영체제 화면 녹화(1편)에서는 이런 동작 시간이 그대로 영상 시간이지만, 한 장씩 찍기는 시각을 k로 나누므로
+    그대로 두면 동작이 k배 빨라져 영상이 짧아진다(1편: 글자 입력·목록 고르기 장면이 최대 2초 빨라짐, 2026-10-11).
+    동작이 끝나면 걸린 시간 × (k-1) 만큼 더 찍으며 기다려, 장면 시각으로 '걸린 시간'만큼 흐르게 한다."""
+
+    def __init__(self, obj, rec):
+        object.__setattr__(self, "_o", obj)
+        object.__setattr__(self, "_rec", rec)
+
+    def __getattr__(self, name):
+        v = getattr(self._o, name)
+        if not callable(v):
+            return _Timed._wrap(v, self._rec)
+        rec = self._rec
+
+        def call(*a, **kw):
+            a = tuple(x._o if isinstance(x, _Timed) else x for x in a)
+            if rec._depth or not rec.frames:
+                return _Timed._wrap(v(*a, **kw), rec)
+            rec._depth += 1
+            t = time.monotonic()
+            try:
+                r = v(*a, **kw)
+            finally:
+                rec._depth -= 1
+            el = time.monotonic() - t
+            rec.frames.hold(el * (rec.k - 1))
+            return _Timed._wrap(r, rec)
+        return call
+
+    @staticmethod
+    def _wrap(v, rec):
+        mod = type(v).__module__ or ""
+        return _Timed(v, rec) if mod.startswith("playwright.sync_api") else v
+
+    def __bool__(self):
+        return bool(self._o)
+
+    def __eq__(self, other):
+        return self._o == (other._o if isinstance(other, _Timed) else other)
+
+    __hash__ = object.__hash__
+
+
 # 모바일은 화살표 대신 손가락 자리(반투명 동그라미). 누르는 순간 진해진다
 TOUCH = """(() => { const add = () => { if (document.getElementById('__cur')) return; const c = document.createElement('div'); c.id='__cur';
   c.style.cssText='position:fixed;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:rgba(40,40,40,.28);'
@@ -147,6 +192,7 @@ class Recorder:
         self.mode = "dry"
         self.k = 1.0                      # 느리게 돌리는 배수 (한 장씩 찍기)
         self.frames = None
+        self._depth = 0
 
     def block_requests(self) -> None:
         """저장·발송 요청(xhr/fetch) 차단을 켠다(안전 규칙). 차단 주소 화면에서만 막는다.
@@ -647,6 +693,7 @@ class Recorder:
             elif method == "frames":
                 self.frames = FrameCapture(pg, ctx, out_dir / "frames")
                 self.k = self.frames.choose_speed(self.sc.url)
+                self.pg = _Timed(pg, self)               # 이제부터 브라우저 동작 시간은 실제 그대로 장면 시각에
                 self.say(f"[녹화] 한 장씩 찍기: {self.k:g}배 느리게 (예상 {self.k * sum(self.dur.values()) / 60:.0f}분 안팎)")
                 if progress:
                     progress({"k": self.k})
