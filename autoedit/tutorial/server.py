@@ -32,6 +32,7 @@ EXAMPLE = ROOT / "tutorials" / "ep1" / "scenario.yaml"
 from . import assistant as A  # AI 도우미(키 있을 때만)
 from . import langs as LG      # 다국어
 from . import ops as OPS       # 오류 보고·공유 파일·시리즈
+from . import style as ST      # 참고 영상 스타일 카드
 from . import voices as V      # 목소리 목록(AI·유료·내 목소리·자막만)은 voices.py
 
 
@@ -214,6 +215,11 @@ def scenario_with_choices(path: Path, ch: dict) -> S.Scenario:
     v = V.find(ch.get("voice", ""))
     if v:
         sc.brand.voice, sc.brand.voice_rate = v["voice"], v["rate"]
+    card = ST.get(ch["style"]) if ch.get("style") else None
+    if card:                                       # 참고 영상 스타일: 편집 기법만(쉼·확대·말 빠르기)
+        sc.style_rules = card["적용"]["rules"]
+        if not int(ch.get("speed", 0)):
+            sc.brand.voice_rate += int(card["적용"].get("speed", 0))
     sc.brand.voice_rate += int(ch.get("speed", 0))
     return sc
 
@@ -276,6 +282,17 @@ def job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real: 
         return _job_make(job, path, ch, preview, allow_real)
     finally:
         mark.unlink(missing_ok=True)
+
+
+def job_style(job: Job, src: Path, name: str):
+    """참고 영상 → 스타일 카드. 원본은 분석이 끝나면 지운다(카드에는 숫자만)."""
+    job.stage("참고 영상 분석 중")
+    try:
+        card = ST.analyze(src, name, log=job.log)
+        p = ST.save(card)
+    finally:
+        src.unlink(missing_ok=True)
+    return {"key": p.stem, "card": card}
 
 
 def job_batch(job: Job, items: list[dict]):
@@ -491,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/api/state":
-                return self.json({"projects": list_projects(), "brands": S.brand_names(), "voices": [v["name"] for v in V.choices()], "voice_list": V.choices(), "keys": keys_view(), "ai_cost": A.estimate("explore")["text"],
+                return self.json({"projects": list_projects(), "brands": S.brand_names(), "voices": [v["name"] for v in V.choices()], "voice_list": V.choices(), "keys": keys_view(), "styles": ST.cards(), "ai_cost": A.estimate("explore")["text"],
                                   "rules": R.merged(R.load_user()), "default_rules": R.DEFAULT, "job": JOB.view(),
                                   "capture": __import__("autoedit.tutorial.capture", fromlist=["x"]).capture_method()})
             if u.path == "/api/project":
@@ -518,7 +535,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, b"", "text/plain")
         u = urlparse(self.path)
         try:
+            if u.path == "/api/style/upload":           # 참고 영상 파일: 그대로 받아 임시 폴더에(큰 파일이라 JSON 이 아님)
+                q = {k: v[0] for k, v in parse_qs(u.query).items()}
+                n = int(self.headers.get("Content-Length") or 0)
+                if not 0 < n < 4 * 1024 ** 3:
+                    return self.json({"ok": False, "error": "영상 파일을 받지 못했어요(4GB 이하)."})
+                src = ST.STYLES / "src" / f"upload{Path(q.get('file', 'v.mp4')).suffix[:6] or '.mp4'}"
+                src.parent.mkdir(parents=True, exist_ok=True)
+                with src.open("wb") as fh:
+                    left = n
+                    while left:
+                        chunk = self.rfile.read(min(left, 1 << 20))
+                        if not chunk:
+                            break
+                        fh.write(chunk); left -= len(chunk)
+                name = q.get("name") or Path(q.get("file", "참고 영상")).stem
+                ok = JOB.start("style", lambda j: job_style(j, src, name), count=0)
+                return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
             b = self.body()
+            if u.path == "/api/style/delete":
+                (ST.STYLES / f"{Path(str(b.get('key', ''))).name}.json").unlink(missing_ok=True)
+                return self.json({"ok": True, "styles": ST.cards()})
             if u.path == "/api/demo/start":
                 ok = JOB.start("demo", lambda j: job_demo(j, b["url"], b.get("topic", ""), b.get("brand", ""),
                                                           b.get("tone", ""), b.get("next", ""), b.get("purpose", "고객 안내")), count=0)

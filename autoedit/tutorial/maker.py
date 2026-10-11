@@ -120,7 +120,8 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
     work.mkdir(parents=True, exist_ok=True)
     if sc.brand.voice == V.SILENT:
         subtitles = True                                # 목소리 없이 자막만이면 자막은 꼭 넣는다
-    rules = rules or R.merged(R.load_user(), sc.brand.rules, sc.rules)
+    # 1편 기본 ← 내 규칙 ← 참고 영상 스타일(편집 기법만) ← 브랜드 ← 장면 표. 안전 규칙은 잠금
+    rules = rules or R.merged(R.load_user(), getattr(sc, "style_rules", None), sc.brand.rules, sc.rules)
     warn = R.apply(sc, rules)
     for w in warn:
         log(f"[규칙] {w}")

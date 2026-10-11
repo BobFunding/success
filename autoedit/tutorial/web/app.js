@@ -291,8 +291,9 @@ function viewChoose() {
   <div class="group"><div class="k">꾸미기</div><div><div class="opts">
     ${brand === "basic" ? "" : `<label class="opt"><input type="radio" name="dc" value="brand" ${c.deco !== "basic" ? "checked" : ""}><span>우리 브랜드 · ${esc(brandName)}</span></label>`}
     <label class="opt"><input type="radio" name="dc" value="basic" ${c.deco === "basic" || brand === "basic" ? "checked" : ""}><span>기본</span></label>
-    <label class="opt"><input type="radio" name="dc" disabled><span>＋ 참고 영상 스타일 <em class="soon">준비 중</em></span></label></div>
+    </div>
     ${brand === "basic" ? '<div class="hint" style="margin-top:6px">⚙ 설정에서 우리 브랜드(로고·색·목소리)를 만들어 두면 여기서 고를 수 있어요.</div>' : ""}</div></div></div>
+  ${styleGroup()}
   <details style="margin-top:var(--s2)"><summary>더 고르기<span>말 빠르기 · 자막 (안 건드려도 됨)</span></summary>
     <div style="padding:0 14px 8px">
       <div class="group"><div class="k">말 빠르기</div><div><input type="range" id="spd" min="-10" max="10" step="2" value="${c.speed}" aria-label="말 빠르기"><div class="scale"><span>천천히</span><span>보통</span><span>빠르게</span></div></div></div>
@@ -302,6 +303,26 @@ function viewChoose() {
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button>
   <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="ghost" type="button" id="quick" title="저화질로 먼저 빠르게 봅니다. 녹화는 최종본에서 그대로 다시 써요.">빠른 미리보기</button>
   <button class="primary" type="button" id="next">만들기 →</button></span></div>`;
+}
+
+// 참고 영상 스타일: 편집 기법(쉼·확대·말 빠르기)만 따라 한다. 색·로고·목소리는 브랜드 그대로
+function styleGroup() {
+  const cards = S.st.styles || [], c = S.choices, j = S.job || {};
+  const run = j.kind === "style" && j.running;
+  const sel = cards.find(x => x.key === c.style);
+  const chips = `<label class="opt"><input type="radio" name="sty" value="" ${!sel ? "checked" : ""}><span>1편 기본</span></label>`
+    + cards.map(x => `<label class="opt"><input type="radio" name="sty" value="${esc(x.key)}" ${sel && sel.key === x.key ? "checked" : ""}><span>🎬 ${esc(x["이름"])}</span></label>`).join("")
+    + `<label class="opt"><input type="file" id="styF" accept="video/*" hidden ${run ? "disabled" : ""}><span>${run ? "분석 중… " + esc(j.stage || "") : "＋ 참고 영상 올리기"}</span></label>`;
+  const a = sel ? sel["적용"] : null;
+  const detail = sel ? `<details style="margin-top:6px"><summary>이 스타일로 바뀌는 것<span>${esc(sel["영상"]["크기"])} · ${esc(sel["영상"]["길이"])}초 영상에서 잼</span></summary><div class="qa" style="padding:0 14px 8px">
+      <div><span>확대</span><span class="chip ok">${a.rules["확대"] > 1 ? `${a.rules["확대"]}배 (최대 ${a.rules["최대확대"]}배)` : "확대 안 함"}</span></div>
+      ${a.rules["문장사이쉼"] != null ? `<div><span>문장 사이 쉼</span><span class="chip ok">${a.rules["문장사이쉼"]}초</span></div>` : ""}
+      <div><span>말 빠르기</span><span class="chip ok">${a.speed > 0 ? "조금 빠르게" : a.speed < 0 ? "조금 천천히" : "그대로"} (${a.speed > 0 ? "+" : ""}${a.speed}%)</span></div>
+      ${(sel["참고만"] || []).map(t => `<div><span>참고만</span><span class="chip">${esc(t)}</span></div>`).join("")}
+      ${(sel["따라할수없음"] || []).map(t => `<div><span>따라 할 수 없음</span><span class="chip blur">${esc(t)}</span></div>`).join("")}
+      <div><span></span><button class="ghost" type="button" data-stydel="${esc(sel.key)}">이 카드 지우기</button></div></div></details>` : "";
+  return `<div class="group"><div class="k">편집 스타일</div><div><div class="opts">${chips}</div>
+    <div class="hint" style="margin-top:6px">본인 영상이거나 허락받은 영상만 올려 주세요. 편집 기법만 재고, 화면·소리·글은 가져오지 않아요(원본은 분석 뒤 지움).</div>${detail}</div></div>`;
 }
 
 // 내 목소리로 녹음: 문장이 하나씩 보이고 [● 녹음] → 읽고 → [■ 멈춤]. 잡음·앞뒤 무음 정리와 음량은 만들 때 자동
@@ -581,6 +602,19 @@ function render() {
       if (r.file) { const a = $("#aud"); a.src = fileUrl(r.file); a.play(); }
     });
     document.querySelectorAll('input[name=dc]').forEach(r => r.onchange = () => S.choices.deco = r.value);
+    document.querySelectorAll('input[name=sty]').forEach(r => r.onchange = () => { S.choices.style = r.value; render(); });
+    const sf = $("#styF");
+    if (sf) sf.onchange = async () => {
+      const f = sf.files[0]; if (!f) return;
+      const r = await fetch(`/api/style/upload?file=${encodeURIComponent(f.name)}`, { method: "POST", body: f }).then(x => x.json());
+      if (!r.ok) { alert(r.error); return; }
+      startPoll(); render();
+    };
+    document.querySelectorAll("[data-stydel]").forEach(b => b.onclick = async () => {
+      if (!confirm("이 스타일 카드를 지울까요?")) return;
+      const r = await api("/api/style/delete", { key: b.dataset.stydel });
+      S.st.styles = r.styles; S.choices.style = ""; render();
+    });
     document.querySelectorAll('input[name=sb]').forEach(r => r.onchange = () => S.choices.subtitles = r.value === "켜기");
     $("#spd").oninput = e => S.choices.speed = +e.target.value;
     document.querySelectorAll("[data-play]").forEach(b => b.onclick = async ev => {
@@ -656,6 +690,12 @@ function startPoll() {
     const j = await api("/api/job");
     const was = S.job;
     S.job = j;
+    if (j.kind === "style" && !j.running && was && was.running) {
+      clearInterval(S.poll); await loadState();
+      if (j.ok) S.choices.style = j.result.key; else alert(j.error);
+      render(); return;
+    }
+    if (S.cur === 2 && j.kind === "style") render();
     if (j.kind === "batch" && !j.running && was && was.running) { clearInterval(S.poll); await loadState(); render(); return; }
     if (j.kind === "ai" && !j.running && was && was.running) {
       clearInterval(S.poll);
