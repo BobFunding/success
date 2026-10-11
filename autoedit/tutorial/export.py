@@ -68,8 +68,12 @@ def iso_dur(sec: float) -> str:
 
 
 class Exporter:
-    def __init__(self, sc: Scenario, work: Path, log=print, site: str = ""):
-        self.sc, self.work, self.say = sc, work, log
+    def __init__(self, sc: Scenario, work: Path, log=print, site: str = "", vertical: str = "따라가기"):
+        """vertical: 세로 영상 방식 — '따라가기'(기본: 누르는 곳을 따라가며 확대해 9:16 으로 꽉 채움, 휴대폰에서 글자가 읽힘)
+        / '전체'(가로 화면 전체를 줄여 넣음)."""
+        if vertical not in ("따라가기", "전체"):
+            raise ValueError("세로 영상 방식은 '따라가기' 또는 '전체' 예요.")
+        self.sc, self.work, self.say, self.vertical = sc, work, log, vertical
         self.P = load_platforms()
         base = sc.file_name
         self.final = work / f"{base}_1440p60.mp4"
@@ -167,20 +171,33 @@ class Exporter:
             return self._cached(f"{self.slug}-1080p.mp4", make)
         return self._cached(f"{self.slug}-1080p.mp4", lambda f: self.with_meta(src, f))
 
-    def v_short16(self) -> Path:
-        """본편만(인트로·아웃트로 없이) 가로 1080p — X 같은 짧은 곳."""
+    def short_range(self, limit: float | None) -> tuple[float, float, bool]:
+        """짧은 가로(X 등): 본편만. 올릴 곳 최대 길이를 넘으면 그 안에서 끝나는 마지막 단계까지 자른다(단계가 하나도 안 들어가면 그 길이에서)."""
         a, z = self.tl["intro"], self.tl["intro"] + self.tl["body"]
+        if not limit or z - a <= limit:
+            return a, z, False
+        ends = [x["end"] for x in self.tl["steps"] if x["end"] - a <= limit - 0.5]
+        return a, (max(ends) if ends else a + limit - 0.5), True
+
+    def v_short16(self, limit: float | None = None) -> Path:
+        """본편만(인트로·아웃트로 없이) 가로 1080p — X 같은 짧은 곳. 최대 길이를 넘으면 단계 끝에서 자동으로 자른다."""
+        a, z, cut = self.short_range(limit)
+        if cut:
+            self.say(f"[내보내기] 본편이 {self.tl['body']:.0f}초라 {limit:.0f}초 안쪽({z - a:.0f}초, 단계가 끝나는 곳)에서 잘랐어요.")
 
         def make(f):
-            run("-ss", f"{a:.3f}", "-to", f"{z:.3f}", "-i", str(self.v_1080()), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
+            fade = ["-af", f"afade=t=out:st={z - a - 0.6:.3f}:d=0.6", "-vf", f"fade=t=out:st={z - a - 0.6:.3f}:d=0.6"] if cut else []
+            run("-ss", f"{a:.3f}", "-to", f"{z:.3f}", "-i", str(self.v_1080()), *fade, "-c:v", "libx264", "-preset", "medium", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000", *self.meta_args("짧은 버전"), "-movflags", "+faststart", str(f))
-        return self._cached(f"{self.slug}-짧은버전.mp4", make)
+        return self._cached(f"{self.slug}-짧은버전-{int(z - a)}.mp4", make)
 
     LAYOUT = {   # 캔버스, 영상 위치(y), 제목 y, 단계 표시 y, 자막 y, 오른쪽 여백(세로는 버튼 자리)
-        "세로": dict(W=1080, H=1920, vy=600, ty=300, sy=528, uy=1260, mr=170),
-        "4대5": dict(W=1080, H=1350, vy=270, ty=70, sy=198, uy=905, mr=70),
-        "1대1": dict(W=1080, H=1080, vy=190, ty=36, sy=128, uy=820, mr=70),
+        # 세로(따라가기): 위 13%·아래 20%·오른쪽 버튼 자리를 피해 제목 → 단계 → 영상 1080x940 → 자막
+        "세로": dict(W=1080, H=1920, vy=430, vh=940, ty=262, sy=362, uy=1392, mr=170),
+        "세로전체": dict(W=1080, H=1920, vy=600, vh=608, ty=300, sy=528, uy=1260, mr=170),
+        "4대5": dict(W=1080, H=1350, vy=270, vh=608, ty=70, sy=198, uy=905, mr=70),
+        "1대1": dict(W=1080, H=1080, vy=190, vh=608, ty=36, sy=128, uy=820, mr=70),
     }
 
     def _bg_png(self, w: int, h: int, out: Path, text: str = "") -> Path:
@@ -213,11 +230,11 @@ class Exporter:
             "[V4+ Styles]",
             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, "
             "StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-            f"Style: Title,{F} Black,{68 if kind == '세로' else 54},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,0,3,8,70,{L['mr']},{L['ty']},1",
-            f"Style: Sub,{F} ExtraBold,{60 if kind == '세로' else 46},&H00FFFFFF,&H00FFFFFF,{sub_bg},{sub_bg},-1,0,0,0,100,100,0,0,3,14,0,8,70,{L['mr']},{L['uy']},1",
-            f"Style: Step,{F} ExtraBold,{38 if kind == '세로' else 32},&H00FFFFFF,&H00FFFFFF,{ass_color(b.point)},{ass_color(b.point)},-1,0,0,0,100,100,0,0,3,10,0,7,40,0,{L['sy']},1",
-            f"Style: Bubble,{F} ExtraBold,{50 if kind == '세로' else 40},&H00FFFFFF,&H00FFFFFF,{ass_color(b.accent)},{ass_color(b.accent)},-1,0,0,0,100,100,0,0,3,14,0,8,0,0,{L['vy'] + 470},1",
-            f"Style: Hook,{F} Black,{62 if kind == '세로' else 50},&H00FFFFFF,&H00FFFFFF,{ass_color(b.accent)},{ass_color(b.accent)},-1,0,0,0,100,100,0,0,3,18,0,8,70,{L['mr']},{L['uy']},1",
+            f"Style: Title,{F} Black,{68 if kind.startswith('세로') else 54},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,0,3,8,70,{L['mr']},{L['ty']},1",
+            f"Style: Sub,{F} ExtraBold,{60 if kind.startswith('세로') else 46},&H00FFFFFF,&H00FFFFFF,{sub_bg},{sub_bg},-1,0,0,0,100,100,0,0,3,14,0,8,70,{L['mr']},{L['uy']},1",
+            f"Style: Step,{F} ExtraBold,{38 if kind.startswith('세로') else 32},&H00FFFFFF,&H00FFFFFF,{ass_color(b.point)},{ass_color(b.point)},-1,0,0,0,100,100,0,0,3,10,0,7,40,0,{L['sy']},1",
+            f"Style: Bubble,{F} ExtraBold,{50 if kind.startswith('세로') else 40},&H00FFFFFF,&H00FFFFFF,{ass_color(b.accent)},{ass_color(b.accent)},-1,0,0,0,100,100,0,0,3,14,0,8,0,0,{L['vy'] + L['vh'] * 3 // 4},1",
+            f"Style: Hook,{F} Black,{62 if kind.startswith('세로') else 50},&H00FFFFFF,&H00FFFFFF,{ass_color(b.accent)},{ass_color(b.accent)},-1,0,0,0,100,100,0,0,3,18,0,8,70,{L['mr']},{L['uy']},1",
             "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text", *ev, ""])
         p = self.cache / f"{kind}.ass"
         p.write_text(txt, encoding="utf-8")
@@ -227,7 +244,7 @@ class Exporter:
         L = self.LAYOUT[kind]
         bg = self._bg_png(L["W"], L["H"], self.cache / f"bg_{kind}.png")
         run("-loop", "1", "-i", str(bg), "-i", str(video), *audio_args,
-            "-filter_complex", f"[1:v]fps=30,scale=1080:608:flags=lanczos[v];[0:v][v]overlay=0:{L['vy']}:shortest=1,fps=30,"
+            "-filter_complex", f"[1:v]fps=30,scale=1080:{L['vh']}:flags=lanczos[v];[0:v][v]overlay=0:{L['vy']}:shortest=1,fps=30,"
                                f"ass=filename='{ff_path(ass)}':fontsdir='{ff_path(FONTS)}',format=yuv420p[o]",
             "-map", "[o]", "-map", "2:a", "-t", f"{total:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             "-pix_fmt", "yuv420p", "-g", "60", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
@@ -253,18 +270,42 @@ class Exporter:
             self._canvas(kind, self._clean_full(), ["-i", str(self.work / "narration.wav")], ass, f, tl["total"])
         return self._cached(f"{self.slug}-{kind}.mp4", make)
 
+    def body_follow(self) -> Path:
+        """세로용 본편: 녹화 원본을 누르는 곳을 따라가며 확대해 1080x940 으로 꽉 채운다(만들기 때와 같은 확대·카메라)."""
+        from ..screenfx import render
+        from . import rules as R
+        L = self.LAYOUT["세로"]
+
+        def make(f):
+            rec = json.loads((self.work / "log_rec.json").read_text(encoding="utf-8"))
+            off = json.loads((self.work / "sync.json").read_text())["offset"]
+            t0 = rec["marks"]["body_start"] + off - 0.2          # compose 와 같은 자르기
+            tb = lambda t: t + off - t0
+            rules = R.merged(R.load_user(), self.sc.brand.rules, self.sc.rules)
+            clicks = [dict(c, t=round(tb(c["t"]), 3)) for c in rec["clicks"]]
+            spots = [dict(x, start=tb(x["start"]), end=tb(x["end"])) for x in rec["spots"]]
+            st = ScreenFxSettings(background=tuple(self.sc.brand.background), zoom=rules["확대"], max_zoom=rules["최대확대"],
+                                  speedup=1.0, out_size=(L["W"], L["vh"]), crf=14, x264_preset="veryfast", fill=True)
+            render(self.work / "body_src.mp4", f, st, clicks=clicks, spots=spots, out_fps=30, log=self.say)
+        return self._cached("body_follow.mp4", make)
+
     def v_vertical(self) -> Path:
-        """짧은 세로: 결과 화면 2초 → 본편 → 연결 안내 2초. 끝과 처음이 같은 결과 화면이라 반복 재생이 이어진다."""
+        """짧은 세로: 결과 화면 2초 → 본편 → 연결 안내 2초. 끝과 처음이 같은 결과 화면이라 반복 재생이 이어진다.
+        기본은 누르는 곳을 따라가며 확대(따라가기), 고르면 가로 화면 전체를 줄여 넣기(전체)."""
         HOOK, END = 2.0, 2.0
+        kind = "세로" if self.vertical == "따라가기" else "세로전체"
+        name = f"{self.slug}-세로-{self.vertical}.mp4"
+        L = self.LAYOUT[kind]
 
         def make(f):
             tl, w = self.tl, self.work
             body_len = tl["body"]
-            last = self.frame(w / "body.mp4", body_len - 0.1, self.cache / "result.jpg")
-            src = self.cache / "vertical_src.mp4"
-            run("-loop", "1", "-t", f"{HOOK}", "-i", str(last), "-i", str(w / "body.mp4"), "-loop", "1", "-t", f"{END}", "-i", str(last),
-                "-filter_complex", "[0:v]fps=30,scale=1080:608,setsar=1[a];[1:v]fps=30,scale=1080:608,setsar=1[b];"
-                                   "[2:v]fps=30,scale=1080:608,setsar=1[c];[a][b][c]concat=n=3:v=1:a=0[v]",
+            body = self.body_follow() if kind == "세로" else w / "body.mp4"
+            last = self.frame(body, body_len - 0.1, self.cache / f"result_{kind}.jpg")
+            src = self.cache / f"vertical_src_{kind}.mp4"
+            sz = f"scale=1080:{L['vh']},setsar=1"
+            run("-loop", "1", "-t", f"{HOOK}", "-i", str(last), "-i", str(body), "-loop", "1", "-t", f"{END}", "-i", str(last),
+                "-filter_complex", f"[0:v]fps=30,{sz}[a];[1:v]fps=30,{sz}[b];[2:v]fps=30,{sz}[c];[a][b][c]concat=n=3:v=1:a=0[v]",
                 "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "14", "-pix_fmt", "yuv420p", str(src))
             i0 = tl["intro"]
             sh = lambda t: t - i0 + HOOK
@@ -274,14 +315,13 @@ class Exporter:
             total = HOOK + body_len + END
             hook = [(0, HOOK, f"이렇게 끝나요 · {T.count_word(self.n_steps)} 단계로 따라 해 보세요"),
                     (HOOK + body_len, END, "전체 영상은 설명란 링크에서 볼 수 있어요")]
-            ass = self._ass("세로", lines, steps, bubbles, hook)
-            audio = ["-i", str(w / "narration.wav")]
+            ass = self._ass(kind, lines, steps, bubbles, hook)
             # 소리: 본편 구간만 잘라 2초 뒤에 놓는다
             sound = self.cache / "vertical.wav"
             run("-i", str(w / "narration.wav"), "-af", f"atrim={i0:.3f}:{i0 + body_len:.3f},asetpts=PTS-STARTPTS,"
                 f"adelay={int(HOOK * 1000)}|{int(HOOK * 1000)},apad=whole_dur={total:.3f}", "-ar", "48000", str(sound))
-            self._canvas("세로", src, ["-i", str(sound)], ass, f, total)
-        return self._cached(f"{self.slug}-세로.mp4", make)
+            self._canvas(kind, src, ["-i", str(sound)], ass, f, total)
+        return self._cached(name, make)
 
     def v_web(self) -> tuple[Path, Path]:
         """내 웹사이트: AV1(작고 선명) + H.264(예비). 1080p30."""
@@ -694,7 +734,7 @@ class Exporter:
             elif kind == "가로1080":
                 place(self.v_1080(), folder / f"{self.slug}.mp4"); made += ["가로1080p"]
             elif kind == "짧은가로":
-                place(self.v_short16(), folder / f"{self.slug}-짧은버전.mp4"); made += ["짧은가로영상", "짧은버전"]
+                place(self.v_short16(p["영상"].get("최대초")), folder / f"{self.slug}-짧은버전.mp4"); made += ["짧은가로영상", "짧은버전"]
             elif kind == "웹":
                 made += self.web_bundle(folder)
             elif kind == "장면클립":

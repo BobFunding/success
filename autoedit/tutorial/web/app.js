@@ -300,6 +300,8 @@ function exportCard() {
   return `<section class="card"><h2>어디에 올릴까요?</h2>
   <p class="lead">고르면 올릴 곳마다 폴더를 만들어 영상·썸네일·복사해 붙여 넣을 글을 넣고, 규격을 자동으로 검사해요. 올리기는 직접 하세요.</p>
   <div class="opts dest">${chips}</div>
+  ${pl.some(p => ["shorts", "naver_clip", "reels", "tiktok", "pinterest"].includes(p.key) && picked.includes(p.key)) ? `<details style="margin-top:var(--s2)"><summary>세로 영상 방식<span>${store.get("vertical", "따라가기") === "전체" ? "화면 전체" : "누르는 곳 따라가기"}</span></summary>
+    <div class="opts">${[["따라가기", "누르는 곳 따라가며 확대 (권장 · 휴대폰에서 글자가 읽혀요)"], ["전체", "가로 화면 전체를 줄여 넣기"]].map(([v, t]) => `<label class="opt"><input type="radio" name="vmode" value="${v}" ${store.get("vertical", "따라가기") === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div></details>` : ""}
   <div class="inline" style="margin-top:var(--s2)"><button class="primary" type="button" id="exportGo" ${run || !picked.length ? "disabled" : ""}>${run ? "내보내는 중…" : `내보내기 (${picked.length}곳)`}</button>
     ${run ? `<span class="hint">${esc(j.stage || "")}</span>` : rep ? `<span class="hint">${rep["판정"] === "ok" ? "✓ 규격 자동 검사 통과" : "⚠ 확인이 필요한 곳이 있어요"} · ${esc(rep["날짜"])}</span>` : ""}</div>
   ${j && !j.running && j.ok === false ? `<div class="verdict has-warn">⚠ ${esc(j.error)}</div>` : ""}
@@ -416,10 +418,11 @@ function render() {
       store.set("exportTo", on_); render();
     });
     on("#exportGo", async () => {
-      const r = await api("/api/export", { path: S.proj.path, to: exportPicked(), choices: S.choices });
+      const r = await api("/api/export", { path: S.proj.path, to: exportPicked(), choices: S.choices, vertical: store.get("vertical", "따라가기") });
       if (!r.ok) { alert(r.error); return; }
       startPoll();
     });
+    document.querySelectorAll("input[name=vmode]").forEach(r => r.onchange = () => { store.set("vertical", r.value); render(); });
     document.querySelectorAll("[data-expopen]").forEach(b => b.onclick = () => api("/api/open", { path: b.dataset.expopen }));
   }
 }

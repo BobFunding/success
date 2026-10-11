@@ -47,6 +47,7 @@ class ScreenFxSettings:
     click_ripple: bool = True
     # ── 출력 ──
     out_size: tuple[int, int] | None = None  # None 이면 입력과 같은 크기
+    fill: bool = False               # 배경·창 없이 출력 비율로 잘라 꽉 채움(세로 영상: 누르는 곳을 따라가며 확대)
     crf: int = 18
     x264_preset: str = "veryfast"
 
@@ -240,8 +241,13 @@ def _near(box, x, y, r) -> bool:
     return abs(cx - x) <= r and abs(cy - y) <= r
 
 
-def camera_path(n_frames: int, fps: float, focus: list[Focus], s: ScreenFxSettings) -> np.ndarray:
-    """프레임마다 (cx, cy, zoom). 목표값을 스프링으로 따라가서 Screen Studio 처럼 부드럽게 움직인다."""
+def camera_path(n_frames: int, fps: float, focus: list[Focus], s: ScreenFxSettings,
+                view: tuple[float, float] = (1.0, 1.0)) -> np.ndarray:
+    """프레임마다 (cx, cy, zoom). 목표값을 스프링으로 따라가서 Screen Studio 처럼 부드럽게 움직인다.
+    view: 확대 1배일 때 보이는 원본 가로·세로 비율(채우기 모드의 세로 화면은 가로 일부만 보임). 기본 (1, 1)."""
+    vx, vy = view
+    keep = view != (1.0, 1.0)         # 채우기: 줌이 끝나도 가운데로 돌아가지 않고 마지막 자리를 지킨다
+    last = (0.5, 0.5)
     path = np.zeros((n_frames, 3))
     pos = np.array([0.5, 0.5, 1.0])
     vel = np.zeros(3)
@@ -251,11 +257,18 @@ def camera_path(n_frames: int, fps: float, focus: list[Focus], s: ScreenFxSettin
     for i in range(n_frames):
         t = i / fps
         tgt = np.array([0.5, 0.5, 1.0])
+        if keep:                       # 채우기: 다음에 누를 곳으로 미리 옮겨 가 둔다(없으면 마지막 자리)
+            nxt = next((f for f in focus if f.start > t), None)
+            tx, ty = (nxt.cx, nxt.cy) if nxt else last
+            hx, hy = vx * 0.5, vy * 0.5
+            tgt = np.array([min(max(tx, hx), 1 - hx), min(max(ty, hy), 1 - hy), 1.0])
         for f in focus:
             if f.start <= t < f.end:
                 # 목표도 화면 안쪽으로 당겨 둔다 (가장자리 버튼을 향해 속도만 계속 쌓이지 않게)
-                th = 0.5 / f.zoom
-                tgt = np.array([min(max(f.cx, th), 1 - th), min(max(f.cy, th), 1 - th), f.zoom])
+                tx, ty = vx * 0.5 / f.zoom, vy * 0.5 / f.zoom
+                tgt = np.array([min(max(f.cx, tx), 1 - tx), min(max(f.cy, ty), 1 - ty), f.zoom])
+                if keep:
+                    last = (f.cx, f.cy)
                 break
         goal = goal + (tgt - goal) * ease
         vel = vel * (1 - c) + (goal - pos) * k
@@ -263,8 +276,8 @@ def camera_path(n_frames: int, fps: float, focus: list[Focus], s: ScreenFxSettin
         if pos[2] < 1.0:
             pos[2], vel[2] = 1.0, 0.0
         # 확대된 화면이 원본 밖으로 나가지 않게 중심을 가둔다. 막힌 방향의 속도는 버린다 (안 그러면 풀릴 때 튐)
-        half = 0.5 / pos[2]
-        for d in (0, 1):
+        for d, v in ((0, vx), (1, vy)):
+            half = v * 0.5 / pos[2]
             clamped = min(max(pos[d], half), 1 - half)
             if clamped != pos[d]:
                 pos[d], vel[d] = clamped, 0.0
@@ -357,7 +370,11 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
 
     acts = analyze(video, fps, log)
     focus = plan_focus(acts, clicks, SW, SH, s)
-    path = camera_path(len(acts), fps, focus, s)
+    view = (1.0, 1.0)
+    if s.fill:                                    # 출력 비율로 원본을 자를 때 1배에서 보이는 비율
+        a = W / H
+        view = (min(1.0, SH * a / SW), min(1.0, SW / a / SH))
+    path = camera_path(len(acts), fps, focus, s, view)
     frames = speed_map(acts, focus, s)
     log(f"[화면] 줌 {len(focus)}곳, {len(acts) / fps:.1f}초 → {len(frames) / fps:.1f}초")
 
@@ -369,14 +386,19 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
         ch = H - 2 * pad
         cw = round(ch * SW / SH)
     ox, oy = (W - cw) // 2, (H - ch) // 2
+    if s.fill:                                    # 채우기: 창이 출력 전체
+        cw, ch, ox, oy = W, H, 0, 0
     r = max(4, int(W * s.corner_radius))
     mask = _round_mask(cw, ch, r)
     bg = _background(W, H, s).astype(np.float32)
     # 그림자: 창 모양을 아래로 살짝 내리고 크게 흐림
-    sh = np.zeros((H, W), np.float32)
-    sh[oy + int(H * 0.012): oy + int(H * 0.012) + ch, ox: ox + cw] = mask[..., 0]
-    sh = cv2.GaussianBlur(sh, (0, 0), W * 0.012)[..., None] * s.shadow
-    base = bg * (1 - sh)
+    if s.fill:                                    # 채우기: 그림자·배경이 보이지 않음
+        base = bg
+    else:
+        sh = np.zeros((H, W), np.float32)
+        sh[oy + int(H * 0.012): oy + int(H * 0.012) + ch, ox: ox + cw] = mask[..., 0]
+        sh = cv2.GaussianBlur(sh, (0, 0), W * 0.012)[..., None] * s.shadow
+        base = bg * (1 - sh)
 
     sub = max(1, round((out_fps or fps) / fps))   # 원본 한 프레임당 출력 프레임 수
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
@@ -406,8 +428,8 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
                 nx = min(idx + 1, len(path) - 1)
                 cx, cy, z = path[idx] * (1 - f2) + path[nx] * f2
                 t = (idx + f2) / fps
-                proc.stdin.write(_compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts)
-                                 .tobytes())
+                proc.stdin.write(_compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts,
+                                          view).tobytes())
             idx += 1
             nxt = next(want, None)
     finally:
@@ -461,12 +483,14 @@ def _spot_mask(w, h, sp):
     return cv2.GaussianBlur(m, (0, 0), 10)
 
 
-def _compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts):
+def _compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts, vfrac=(1.0, 1.0)):
     """확대·클릭 파동·배경 합성 → 출력 한 프레임."""
     import cv2
     # 확대: 원본에서 (cx, cy) 중심으로 1/z 크기 영역을 잘라 창 크기로 키움
-    vw, vh = SW / z, SH / z
+    vw, vh = SW * vfrac[0] / z, SH * vfrac[1] / z
     x0, y0 = cx * SW - vw / 2, cy * SH - vh / 2
+    if vfrac != (1.0, 1.0):                       # 채우기: 잘라 낸 곳이 원본 밖으로 나가지 않게
+        x0, y0 = min(max(x0, 0), SW - vw), min(max(y0, 0), SH - vh)
     M = np.array([[cw / vw, 0, -x0 * cw / vw], [0, ch / vh, -y0 * ch / vh]], np.float32)
     view = cv2.warpAffine(frame, M, (cw, ch), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
     for ct, px, py in click_ts:
@@ -480,6 +504,8 @@ def _compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts):
             cv2.circle(ov, (int(sx), int(sy)), rad, (255, 255, 255), max(2, int(4 * cw / SW * z)), cv2.LINE_AA)
             cv2.circle(ov, (int(sx), int(sy)), max(2, rad // 3), (36, 20, 204), -1, cv2.LINE_AA)  # 로고 빨강 #CC1424
             view = cv2.addWeighted(ov, 0.75 * (1 - p), view, 1 - 0.75 * (1 - p), 0)
+    if vfrac != (1.0, 1.0):                       # 채우기: 배경·창 없이 그대로
+        return view
     canvas = base.copy()
     region = canvas[oy:oy + ch, ox:ox + cw]
     canvas[oy:oy + ch, ox:ox + cw] = region * (1 - mask) + view.astype(np.float32) * mask

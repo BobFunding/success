@@ -254,10 +254,10 @@ def job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real: 
                       ask=job.ask, allow_real=allow_real and not preview)
 
 
-def job_export(job: Job, path: Path, dests: list[str], ch: dict):
+def job_export(job: Job, path: Path, dests: list[str], ch: dict, vertical: str = "따라가기"):
     from .export import Exporter
     sc = scenario_with_choices(path, ch)
-    return Exporter(sc, work_dir(path), log=job.log).export(dests, on_stage=job.stage)
+    return Exporter(sc, work_dir(path), log=job.log, vertical=vertical).export(dests, on_stage=job.stage)
 
 
 def platforms_view() -> list[dict]:
@@ -419,7 +419,8 @@ class Handler(BaseHTTPRequestHandler):
                 dests = [d for d in b.get("to", []) if isinstance(d, str)]
                 if not dests:
                     return self.json({"ok": False, "error": "올릴 곳을 하나 이상 골라 주세요."})
-                ok = JOB.start("export", lambda j: job_export(j, Path(b["path"]), dests, b.get("choices", {})), path=b["path"])
+                ok = JOB.start("export", lambda j: job_export(j, Path(b["path"]), dests, b.get("choices", {}),
+                                                                 "전체" if b.get("vertical") == "전체" else "따라가기"), path=b["path"])
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
             if u.path == "/api/answer":
                 return self.json({"ok": JOB.answer(str(b.get("value", "")))})

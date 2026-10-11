@@ -95,3 +95,18 @@ def test_privacy_blur_and_spot_dimming():
     out = _apply_privacy_and_spots(frame.copy(), 2.5, [], [spot], {})
     assert abs(float(out[120:150, 180:220].mean()) - float(frame[120:150, 180:220].mean())) < 3
     assert out[0:50, 0:50].mean() < frame[0:50, 0:50].mean() * 0.8
+
+
+def test_fill_view_reaches_edge_buttons_and_keeps_place():
+    """세로 채우기: 1배에서 가로 일부만 보이므로, 가장자리 버튼까지 따라가고 줌이 끝나도 그 자리를 지킨다."""
+    s = ScreenFxSettings()
+    view = (0.36, 1.0)                                  # 1080x1080 출력, 원본 16:9 → 가로 36% 만 보임
+    path = camera_path(300, FPS, [Focus(1.0, 4.0, 0.95, 0.1, 1.6, "click")], s, view)
+    half_x = view[0] * 0.5 / path[:, 2]
+    assert (path[:, 0] >= half_x - 1e-9).all() and (path[:, 0] <= 1 - half_x + 1e-9).all()
+    x, z = path[100, 0], path[100, 2]
+    assert x + view[0] * 0.5 / z > 0.93                 # 오른쪽 끝 버튼이 화면 안
+    assert path[299, 0] > 0.7                           # 줌이 끝나도 가운데로 돌아가지 않음
+    two = camera_path(300, FPS, [Focus(1.0, 3.0, 0.1, 0.5, 1.6, "click"), Focus(8.0, 9.0, 0.9, 0.5, 1.6, "click")], s, view)
+    assert two[200, 0] > 0.75                           # 다음에 누를 곳(오른쪽)으로 미리 가 있음
+    assert np.allclose(camera_path(300, FPS, [], s), camera_path(300, FPS, [], s, (1.0, 1.0)))

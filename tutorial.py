@@ -43,6 +43,8 @@ def main() -> int:
     x.add_argument("--work")
     x.add_argument("--to", nargs="+", default=["youtube", "web"], help="올릴 곳 (all 이면 14곳 전부)")
     x.add_argument("--site", default="", help="링크 주소 (기본: 장면 표의 사이트)")
+    x.add_argument("--vertical", default="따라가기", choices=("따라가기", "전체"),
+                   help="세로 영상: 누르는 곳을 따라가며 확대(기본) / 가로 화면 전체를 줄여 넣기")
     a = ap.parse_args()
 
     if a.cmd == "ui":
@@ -77,7 +79,7 @@ def main() -> int:
         from autoedit.tutorial.export import Exporter, load_platforms
         dests = list(load_platforms()["올릴곳"]) if a.to == ["all"] else a.to
         try:
-            rep = Exporter(sc, work, site=a.site).export(dests, on_stage=lambda n: print(f"── {n}"))
+            rep = Exporter(sc, work, site=a.site, vertical=a.vertical).export(dests, on_stage=lambda n: print(f"── {n}"))
         except ValueError as e:
             print(e)
             return 1

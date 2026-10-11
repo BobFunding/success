@@ -80,3 +80,15 @@ def test_texts_within_limits(dest):
         assert len(re.findall(r"#\w+", t.get("해시태그", t.get("설명", "")))) <= lim["해시태그"]
     if dest != "web":
         assert "utm_source=" in t["링크"]
+
+
+def test_short_version_cuts_at_step_end():
+    """X 처럼 최대 길이가 있으면 그 안에서 끝나는 마지막 단계까지 자동으로 자른다."""
+    ex = E.Exporter.__new__(E.Exporter)
+    ex.tl = {"intro": 10, "body": 200, "steps": [{"start": 10, "end": 70}, {"start": 70, "end": 145}, {"start": 145, "end": 210}]}
+    assert ex.short_range(None) == (10, 210, False)
+    assert ex.short_range(300) == (10, 210, False)
+    assert ex.short_range(140) == (10, 145, True)                      # 135초: 2단계 끝
+    assert ex.short_range(50) == (10, 59.5, True)                      # 단계가 안 들어가면 그 길이에서
+    with pytest.raises(ValueError):
+        E.Exporter(None, Path("."), vertical="이상한값")
