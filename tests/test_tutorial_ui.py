@@ -138,7 +138,7 @@ def test_server_export_needs_destination(srv):
     d = json.loads(urllib.request.urlopen(req).read())
     assert d["ok"] is False and "올릴 곳" in d["error"]
     pl = SV.platforms_view()
-    assert len(pl) == 14 and {p["key"] for p in pl if p["default"]} == {"youtube", "web"}
+    assert len(pl) == 15 and {p["key"] for p in pl if p["default"]} == {"youtube", "web"}
 
 
 def test_repro_tolerance_follows_original_code_noise():
@@ -153,3 +153,71 @@ def test_repro_tolerance_follows_original_code_noise():
     r = compare_logs(log(0), log(0.3), tol_t=max(0.25, noise))
     assert r["ok"] and r["tol_t"] == 0.32
     assert not compare_logs(log(0), log(0.4), tol_t=max(0.25, noise))["ok"]
+
+
+def test_purpose_templates_keep_customer_default():
+    from autoedit.tutorial import sentences as T
+    i, o = T.intro_outro("관장님 회원가입", 3, "태권 월드")
+    assert i == ["안녕하세요, 태권 월드입니다.", "오늘은 관장님 회원가입 방법을, 세 단계로 알려 드릴게요."]   # 1편 그대로
+    i, o = T.intro_outro("회원 등록", 3, "도서관", purpose="직원 교육")
+    assert "업무 교육" in i[0] and "익혀" in i[1] and o[1] == "수고하셨습니다."
+    i, o = T.intro_outro("회원 등록", 2, "", purpose="제품 소개")
+    assert i[1] == "두 단계면 끝나요."
+
+
+def test_report_masks_private_things():
+    from autoedit.tutorial import ops
+    job = {"kind": "make", "stage": "녹화", "running": False, "error": "실패 sk-ant-abcdefghijk 010-1234-5678",
+           "log": ["메일 a.b@test.com 인증 482913"]}
+    t = ops.report(job, EP1)
+    assert "sk-ant-abc" not in t and "1234-5678" not in t and "a.b@test.com" not in t and "482913" not in t
+    assert "장면 13개" in t and "taekwonworld.net" in t
+
+
+def test_share_pack_and_unpack(tmp_path, monkeypatch):
+    import zipfile
+    from autoedit.tutorial import ops
+    from autoedit.tutorial import scenario as S2
+    monkeypatch.setattr(R, "USER_DIR", tmp_path / "u")
+    monkeypatch.setattr(S2, "USER_BRANDS", tmp_path / "brands")
+    src = tmp_path / "p" / "scenario.yaml"
+    src.parent.mkdir()
+    d = S2.yaml.safe_load(EP1.read_text(encoding="utf-8")) if hasattr(S2, "yaml") else __import__("yaml").safe_load(EP1.read_text(encoding="utf-8"))
+    d["개인정보칸"] = ["#name"]
+    d["장면"][0]["칸"] = [{"누를곳": "#name", "값": "진짜이름"}, {"누를곳": "#pw", "값": "@보관함"}]
+    import yaml as Y
+    src.write_text(Y.safe_dump(d, allow_unicode=True), encoding="utf-8")
+    z = ops.pack(src, tmp_path / "p")
+    names = zipfile.ZipFile(z).namelist()
+    assert "scenario.yaml" in names and any(n.startswith("brand/") for n in names)
+    assert "진짜이름" not in zipfile.ZipFile(z).read("scenario.yaml").decode()          # 개인정보 칸 값은 비움
+    out = ops.unpack(z.read_bytes(), tmp_path / "projects")
+    assert out.exists() and (tmp_path / "brands" / "taekwonworld.yaml").exists() is False   # 기본 제공 브랜드는 복사 안 함
+    bad = tmp_path / "bad.zip"
+    with zipfile.ZipFile(bad, "w") as zz:
+        zz.writestr("scenario.yaml", "제목: x")
+        zz.writestr("../evil.txt", "x")
+    with pytest.raises(ValueError):
+        ops.unpack(bad.read_bytes(), tmp_path / "projects")
+
+
+def test_series_links_next_episode(tmp_path):
+    import yaml as Y
+    from autoedit.tutorial import ops
+    def mk(name, title):
+        p = tmp_path / name / "scenario.yaml"
+        p.parent.mkdir()
+        d = Y.safe_load(EP1.read_text(encoding="utf-8"))
+        d["제목"], d["파일이름"] = title, name
+        d.pop("다음편", None)
+        d["아웃트로"][-1]["말"] = "태권 월드였습니다."
+        p.write_text(Y.safe_dump(d, allow_unicode=True), encoding="utf-8")
+        return p
+    a, b = mk("a", "관장님 회원가입, [3단계]면 끝!"), mk("b", "로그인, [2단계]면 끝!")
+    ps = [a, b]
+    ops.set_series(b, "태권월드 사용법", 2, ps)
+    ops.set_series(a, "태권월드 사용법", 1, ps)
+    da = Y.safe_load(a.read_text(encoding="utf-8"))
+    assert da["다음편"] == "로그인" and da["아웃트로"][-1]["말"] == "다음 영상에서는 로그인 방법을 알려 드릴게요. 태권 월드였습니다."
+    assert "다음편" not in Y.safe_load(b.read_text(encoding="utf-8"))
+    assert [e["편"] for e in ops.series_list(ps)["태권월드 사용법"]] == [1, 2]

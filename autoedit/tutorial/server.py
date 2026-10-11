@@ -31,6 +31,7 @@ PROJECTS = ROOT / "output" / "tutorial"
 EXAMPLE = ROOT / "tutorials" / "ep1" / "scenario.yaml"
 from . import assistant as A  # AI 도우미(키 있을 때만)
 from . import langs as LG      # 다국어
+from . import ops as OPS       # 오류 보고·공유 파일·시리즈
 from . import voices as V      # 목소리 목록(AI·유료·내 목소리·자막만)은 voices.py
 
 
@@ -174,10 +175,12 @@ def project_view(path: Path) -> dict:
     vids = sorted(w.glob("*_1440p60.mp4"))
     files = [str(f) for pat in ("*_1440p60.mp4", "*_1080p30.mp4", "*.srt", "챕터.txt") for f in sorted(w.glob(pat))]
     chap = (w / "챕터.txt").read_text(encoding="utf-8").splitlines() if (w / "챕터.txt").exists() else []
+    ser = OPS.series_list(sorted(PROJECTS.glob("*/scenario.yaml")) if PROJECTS.exists() else [])
     exp = w / "내보내기" / "점검.json"
     export = json.loads(exp.read_text(encoding="utf-8")) if exp.exists() else None
     return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "secrets": secrets_needed, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
             "choices": choices, "export": export,
+            "series": {"name": d.get("시리즈", ""), "no": d.get("편", ""), "eps": ser.get(d.get("시리즈", ""), []), "names": sorted(ser)},
             "lines": [{"key": l.key, "text": l.text} for l in sc.lines()] if sc else [],
             "lang_source": LG.source(sc) if sc else {},
             "translations": LG.load(w),
@@ -213,7 +216,7 @@ def scenario_with_choices(path: Path, ch: dict) -> S.Scenario:
     return sc
 
 
-def job_demo(job: Job, url: str, topic: str, brand: str, tone: str, next_topic: str):
+def job_demo(job: Job, url: str, topic: str, brand: str, tone: str, next_topic: str, purpose: str = "고객 안내"):
     from .demo_record import DemoSession, save
     headless = os.environ.get("TUTORIAL_HEADLESS") == "1"
     sess = DemoSession(url, headless=headless, cdp_port=int(os.environ.get("TUTORIAL_DEMO_CDP", "0")) or None)
@@ -226,19 +229,19 @@ def job_demo(job: Job, url: str, topic: str, brand: str, tone: str, next_topic: 
         except Exception:
             break                                  # 사람이 창을 닫음 = 끝
     job.update(count=len(sess.events))
-    sc = sess.finish(topic=topic, brand=brand, tone=tone, next_topic=next_topic)
+    sc = sess.finish(topic=topic, brand=brand, tone=tone, next_topic=next_topic, purpose=purpose)
     path = PROJECTS / sc["파일이름"] / "scenario.yaml"
     save(sc, path)
     return {"path": str(path), "scenes": len(sc["장면"])}
 
 
-def job_ai(job: Job, url: str, goal: str, brand: str, tone: str):
+def job_ai(job: Job, url: str, goal: str, brand: str, tone: str, purpose: str = "고객 안내"):
     """AI에게 맡기기: AI가 사람 대신 한 번 해 보이고, 시연 때와 같은 방식으로 장면 표를 만든다."""
     from . import assistant as A
     from .demo_record import save
     llm = A.get_llm()
     job.stage("AI가 사이트를 둘러보는 중")
-    r = A.explore(llm, url, goal, ask=job.ask, log=job.log, stop=job.stop.is_set, tone=tone or "차분", brand=brand,
+    r = A.explore(llm, url, goal, ask=job.ask, log=job.log, stop=job.stop.is_set, tone=tone, brand=brand, purpose=purpose,
                   headless=os.environ.get("TUTORIAL_HEADLESS", "1") == "1")
     sc = r["scenario"]
     path = PROJECTS / sc["파일이름"] / "scenario.yaml"
@@ -462,15 +465,35 @@ class Handler(BaseHTTPRequestHandler):
             b = self.body()
             if u.path == "/api/demo/start":
                 ok = JOB.start("demo", lambda j: job_demo(j, b["url"], b.get("topic", ""), b.get("brand", ""),
-                                                          b.get("tone", ""), b.get("next", "")), count=0)
+                                                          b.get("tone", ""), b.get("next", ""), b.get("purpose", "고객 안내")), count=0)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/report":
+                pth = Path(b["path"]) if b.get("path") else None
+                return self.json({"ok": True, "text": OPS.report(JOB.view(), pth if pth and allowed(pth) else None)})
+            if u.path == "/api/project/pack":
+                p = Path(b["path"])
+                return self.json({"ok": True, "file": str(OPS.pack(p, work_dir(p)))})
+            if u.path == "/api/project/unpack":
+                import base64
+                try:
+                    np_ = OPS.unpack(base64.b64decode(str(b["data"]).split(",", 1)[-1]), PROJECTS)
+                except (ValueError, __import__("zipfile").BadZipFile) as e:
+                    return self.json({"ok": False, "error": str(e) or "공유 파일을 열지 못했어요."})
+                return self.json({"ok": True, "path": str(np_)})
+            if u.path == "/api/series":
+                p = Path(b["path"])
+                if p.resolve() == EXAMPLE.resolve():
+                    p = save_project(p, yaml.safe_load(p.read_text(encoding="utf-8")))
+                n = OPS.set_series(p, str(b.get("name", "")).strip(), int(b.get("no") or 1),
+                                   sorted(PROJECTS.glob("*/scenario.yaml")))
+                return self.json({"ok": True, "path": str(p), "changed": n})
             if u.path == "/api/ai/start":
                 if not A.ensure_key():
                     return self.json({"ok": False, "need_key": True, "error": "AI 도우미 키가 없어요."})
                 goal = str(b.get("goal", "")).strip()
                 if not goal:
                     return self.json({"ok": False, "error": "무엇을 하는 방법인지 한 줄로 적어 주세요. 예: 관장님이 회원가입하는 방법"})
-                ok = JOB.start("ai", lambda j: job_ai(j, b["url"], goal, b.get("brand", ""), b.get("tone", "")), count=0)
+                ok = JOB.start("ai", lambda j: job_ai(j, b["url"], goal, b.get("brand", ""), b.get("tone", ""), b.get("purpose", "고객 안내")), count=0)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
             if u.path in ("/api/translate", "/api/polish"):
                 p = Path(b["path"])

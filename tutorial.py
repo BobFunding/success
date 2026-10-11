@@ -41,7 +41,7 @@ def main() -> int:
     x = sub.add_parser("export", help="내보내기: 올릴 곳별 파일·글 + 규격 검사")
     x.add_argument("scenario")
     x.add_argument("--work")
-    x.add_argument("--to", nargs="+", default=["youtube", "web"], help="올릴 곳 (all 이면 14곳 전부)")
+    x.add_argument("--to", nargs="+", default=["youtube", "web"], help="올릴 곳 (all 이면 설명서까지 전부)")
     x.add_argument("--site", default="", help="링크 주소 (기본: 장면 표의 사이트)")
     x.add_argument("--vertical", default="따라가기", choices=("따라가기", "전체"),
                    help="세로 영상: 누르는 곳을 따라가며 확대(기본) / 가로 화면 전체를 줄여 넣기")

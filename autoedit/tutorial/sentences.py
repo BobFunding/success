@@ -118,15 +118,34 @@ def topic_words(topic: str) -> str:
     return re.sub(r"\s*(하는\s*)?방법\s*$", "", topic.strip())
 
 
-def intro_outro(topic: str, n_steps: int, brand_spoken: str, next_topic: str = "") -> tuple[list[str], list[str]]:
-    """인트로 2문장, 아웃트로 2문장 (RULES.md 2절 공통 틀)."""
+# 용도별 시작 틀 (DESIGN.md 13절): 인트로·아웃트로 문구와 말투. '고객 안내'는 1편 그대로.
+PURPOSES = {
+    "고객 안내": {"말투": "차분"},
+    "직원 교육": {"말투": "전문"},
+    "제품 소개": {"말투": "친근"},
+}
+
+
+def intro_outro(topic: str, n_steps: int, brand_spoken: str, next_topic: str = "",
+                purpose: str = "고객 안내") -> tuple[list[str], list[str]]:
+    """인트로 2문장, 아웃트로 2문장 (RULES.md 2절 공통 틀). purpose 로 용도별 문구."""
     t = topic_words(topic)
-    hello = f"안녕하세요, {brand_spoken}입니다." if brand_spoken else "안녕하세요."
-    intro = [hello, f"오늘은 {t} 방법을, {count_word(n_steps)} 단계로 알려 드릴게요."]
+    n = count_word(n_steps)
     bye = f"{brand_spoken}였습니다." if brand_spoken and not has_batchim(brand_spoken) else \
           (f"{brand_spoken}이었습니다." if brand_spoken else "고맙습니다.")
     nxt = f"다음 영상에서는 {topic_words(next_topic)} 방법을 알려 드릴게요. " if next_topic else ""
-    outro = [f"오늘 배운 {count_word(n_steps)} 단계, 기억하시죠?", nxt + bye]
+    if purpose == "직원 교육":
+        hello = f"안녕하세요, {brand_spoken} 업무 교육입니다." if brand_spoken else "안녕하세요, 업무 교육입니다."
+        intro = [hello, f"이번 시간에는 {t} 방법을, {n} 단계로 익혀 보겠습니다."]
+        outro = [f"오늘 익힌 {n} 단계, 실제 화면에서 한 번 따라 해 보세요.", nxt + "수고하셨습니다."]
+    elif purpose == "제품 소개":
+        intro = [f"{josa(brand_spoken, '으로/로')} {t}, 얼마나 쉬운지 보여 드릴게요." if brand_spoken
+                 else f"{t}, 얼마나 쉬운지 보여 드릴게요.", f"{n} 단계면 끝나요."]
+        outro = [f"어떠세요, {n} 단계면 충분하죠?", nxt + "지금 바로 시작해 보세요."]
+    else:
+        hello = f"안녕하세요, {brand_spoken}입니다." if brand_spoken else "안녕하세요."
+        intro = [hello, f"오늘은 {t} 방법을, {n} 단계로 알려 드릴게요."]
+        outro = [f"오늘 배운 {n} 단계, 기억하시죠?", nxt + bye]
     return intro, outro
 
 

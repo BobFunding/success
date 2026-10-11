@@ -740,6 +740,53 @@ class Exporter:
         txt = re.sub(r"(\d\d:\d\d:\d\d),(\d\d\d)", r"\1.\2", txt)
         vtt.write_text("WEBVTT\n\n" + txt + "\n", encoding="utf-8")
 
+    def manual(self, folder: Path) -> list[str]:
+        """따라 하기 설명서: 단계마다 화면 사진 + 문장. 웹 문서(설명서.html)와 인쇄용 PDF(같은 문서를 브라우저로 인쇄)."""
+        b, shots = self.sc.brand, dict((n, f) for n, _, f in self.scene_shots())
+        img = folder / "사진"
+        steps = ""
+        for i, s in enumerate(self.tl["steps"]):
+            items = ""
+            for no, t, a, z in self.scene_times():
+                if not (s["start"] - 0.05 <= a < s["end"]):
+                    continue
+                f = place(shots[no], img / f"{self.slug}-{no:02d}.jpg")
+                k = items.count("<li>") + 1
+                items += (f'<li><p><b>{k}</b>{html.escape(t)}</p>'
+                          f'<img src="사진/{f.name}" alt="{i + 1}단계 {html.escape(s["name"])}: {html.escape(t)}"></li>')
+            steps += f'<section class="step"><h2><b>{i + 1}</b>{html.escape(s["name"])}</h2><ol>{items}</ol></section>'
+        link = utm(self.site, "manual", self.campaign)
+        doc = f"""<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(self.sc.title_plain)} — 따라 하기 설명서</title>
+<style>
+:root{{--c1:{b.background[0]};--c2:{b.background[1]};--pt:{b.point};--hl:{b.highlight}}}
+body{{font-family:Pretendard,"Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;max-width:860px;margin:0 auto;padding:24px;color:#1b1f2a;line-height:1.7;background:#fff}}
+header{{background:linear-gradient(135deg,var(--c1),var(--c2));color:#fff;border-radius:14px;padding:28px 28px 22px;margin-bottom:24px}}
+header h1{{margin:0 0 6px;font-size:28px}} header p{{margin:0;opacity:.9}}
+.step h2{{display:flex;gap:10px;align-items:center;font-size:21px;border-bottom:2px solid #eef0f5;padding-bottom:6px}}
+.step h2 b{{background:var(--pt);color:#fff;border-radius:99px;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;font-size:16px}}
+ol{{list-style:none;padding:0}} li{{margin:0 0 22px;break-inside:avoid}} img{{width:100%;height:auto;border-radius:10px;border:1px solid #e3e6ee}}
+li p{{margin:0 0 8px;font-size:17px;display:flex;gap:8px;align-items:baseline}} li p b{{color:var(--pt);min-width:1.4em}}
+.step h2{{break-after:avoid}} footer{{margin-top:28px;color:#667;font-size:14px;border-top:1px solid #eef0f5;padding-top:12px}}
+@media print{{body{{padding:0}} header{{-webkit-print-color-adjust:exact;print-color-adjust:exact}} .step{{break-before:auto}}}}
+</style></head><body>
+<header><h1>{html.escape(self.sc.title_plain)}</h1><p>{html.escape(self.topic)} 방법을 {T.count_word(self.n_steps)} 단계로 정리했어요. 화면을 보며 그대로 따라 해 보세요.</p></header>
+{steps}
+<footer>{html.escape(b.name or "")} · 영상으로 보기: <a href="{link}">{html.escape(self.site)}</a> · {dt.date.today().isoformat()}</footer>
+</body></html>"""
+        web = folder / "설명서.html"
+        web.write_text(doc, encoding="utf-8")
+        from playwright.sync_api import sync_playwright
+        from .recorder import CHROME
+        with sync_playwright() as p:
+            br = p.chromium.launch(executable_path=CHROME)
+            pg = br.new_page()
+            pg.goto(web.resolve().as_uri(), wait_until="load")
+            pg.pdf(path=str(folder / f"{self.slug}-설명서.pdf"), format="A4", print_background=True,
+                   margin={"top": "14mm", "bottom": "14mm", "left": "12mm", "right": "12mm"})
+            br.close()
+        return ["설명서PDF", "설명서웹", "대체텍스트"]
+
     def blog_bundle(self, folder: Path) -> list[str]:
         shots = self.scene_shots()
         img = folder / "사진"
@@ -796,6 +843,8 @@ class Exporter:
                 place(self.v_short16(p["영상"].get("최대초")), folder / f"{self.slug}-짧은버전.mp4"); made += ["짧은가로영상", "짧은버전"]
             elif kind == "웹":
                 made += self.web_bundle(folder)
+            elif kind == "설명서":
+                made += self.manual(folder)
             elif kind == "장면클립":
                 for mp4, gif in self.clips():
                     place(mp4, folder / "장면클립" / f"{self.slug}-{mp4.stem}.mp4")
@@ -964,6 +1013,10 @@ class Exporter:
                 res.append({"이름": "글: 링크 꼬리표(UTM)", "판정": "ok" if "utm_source=" in t["링크"] else "fail", "내용": t["링크"]})
             if d == "web":
                 res += self.check_web(folder)
+            for f in sorted(folder.glob("*.pdf")):
+                pages = f.read_bytes().count(b"/Type /Page") - f.read_bytes().count(b"/Type /Pages")
+                mb = f.stat().st_size / 1048576
+                res.append({"이름": f.name, "판정": "ok" if pages >= 1 and mb < 20 else "fail", "내용": f"{pages}쪽 · {mb:.1f}MB"})
             # 빠짐 검사: 연결표의 항목 중 안 만든 것
             want = (set(p["항목"]) | set(self.P["항상"])) - off
             soon = set(self.P.get("준비중", []))

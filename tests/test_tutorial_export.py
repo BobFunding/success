@@ -10,7 +10,7 @@ from autoedit.tutorial import export as E
 
 def test_platform_table_complete():
     P = E.load_platforms()
-    assert len(P["올릴곳"]) == 14
+    assert len(P["올릴곳"]) == 15                     # 올릴 곳 14 + 따라 하기 설명서
     names = P["항목이름"]
     for k, p in P["올릴곳"].items():
         assert p["이름"] and p["utm"] and p["영상"]["크기"] and p["영상"]["fps"], k
