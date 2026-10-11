@@ -79,11 +79,49 @@ function viewStart() {
     <label class="f" for="ttl">영상 주제 (선택)<input type="text" id="ttl" value="${esc(S.title)}" placeholder="예: 관장님 회원가입 — 비워 두면 자동 제안"></label></div>
 </section>
 <section class="modes">
-  <button type="button" class="mode on" id="mDemo"><b>🖱 한 번 해 보이기</b><span>내가 직접 한 번 보여 주기. AI 없이, 비용 없이</span></button>
-  <button type="button" class="mode" disabled title="AI 도우미는 다음 업데이트에서 열려요"><b>✨ AI에게 맡기기 <em class="soon">준비 중</em></b><span>한 줄로 부탁하면 AI가 사이트를 둘러보고 채움</span></button>
+  <button type="button" class="mode ${S.mode !== "ai" ? "on" : ""}" id="mDemo"><b>🖱 한 번 해 보이기</b><span>내가 직접 한 번 보여 주기. AI 없이, 비용 없이</span></button>
+  <button type="button" class="mode ${S.mode === "ai" ? "on" : ""}" id="mAi"><b>✨ AI에게 맡기기</b><span>한 줄로 부탁하면 AI가 사이트를 둘러보고 채움${(S.st.keys || {}).anthropic ? "" : " · 키 필요"}</span></button>
 </section>
-<section class="card"><h2>한 번 해 보이기</h2>${demo}</section>
+${S.mode === "ai" ? aiCard() : `<section class="card"><h2>한 번 해 보이기</h2>${demo}</section>`}
 <section class="card"><h2>지난 작업</h2><p class="lead">열어서 문장 하나만 고치고 다시 만들 수 있어요.</p><div class="plist">${projects || '<p class="hint">아직 없어요.</p>'}</div></section>`;
+}
+
+// 문장 다듬기(AI, 선택): 바꾼 문장만 제안 → 사람이 적용
+function polishBox() {
+  if (!(S.st.keys || {}).anthropic) return "";
+  const sg = S.polish;
+  if (!sg) return `<div class="foot"><span class="hint">AI가 브랜드 말투로 문장을 다듬어 제안해요 · ${esc((S.proj.ai_cost || {}).translate || "")}</span><button class="ghost" type="button" id="polishGo">${S.polishing ? "다듬는 중…" : "✨ 문장 다듬기"}</button></div>`;
+  const sc = S.proj.scenario["장면"], keys = Object.keys(sg);
+  if (!keys.length) return `<div class="summary">✓ AI가 보기에 고칠 문장이 없어요.</div>`;
+  return `<div class="card" style="margin-top:var(--s2)"><h2>다듬은 문장 제안 ${keys.length}개</h2><div class="qa">${keys.map(k => {
+    const sc_ = sc.find(x => x["키"] === k) || {};
+    return `<div><span><s style="color:var(--muted)">${esc(sc_["말"] || "")}</s><br>${esc(sg[k])}</span><button class="ghost" type="button" data-pol="${esc(k)}">적용</button></div>`; }).join("")}</div>
+    <div class="foot"><button class="ghost" type="button" id="polishNo">닫기</button><button class="primary" type="button" id="polishAll">모두 적용</button></div></div>`;
+}
+
+// AI에게 맡기기: 키가 없으면 그 자리에서 3단계 안내, 있으면 예상 비용 → 시작 → 진행·질문
+function aiCard() {
+  const j = S.job || {}, run = j.kind === "ai" && j.running, K = S.st.keys || {};
+  if (!K.anthropic) return `<section class="card"><h2>AI에게 맡기기 · 키 연결</h2>
+    <p class="lead">AI 도우미는 Claude 키가 있을 때만 켜져요. 한 번만 넣으면 다시 묻지 않아요(이 PC 보관함에만 저장).</p>
+    <ol class="steps3"><li>① <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">키 받는 곳 열기</a> → [Create Key]</li>
+      <li>② 받은 키를 붙여 넣기<input type="password" id="aiKey" placeholder="sk-ant-…" autocomplete="off"></li>
+      <li>③ <button class="primary" type="button" id="aiKeySave">확인</button> → 연결됨</li></ol>
+    <p class="hint">키가 없어도 [한 번 해 보이기]로 똑같이 만들 수 있어요(비용 없음).</p></section>`;
+  const ask = run && j.ask ? `<div class="card" style="border-color:var(--blue);margin-top:var(--s2)"><h2>AI가 물어봐요</h2><p class="lead">${esc(j.ask.question)}</p>
+    ${j.ask.shot ? `<img src="${fileUrl(j.ask.shot)}&t=${j.ask.asked}" alt="지금 화면" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ""}
+    <div class="inline" style="margin-top:var(--s2)"><input type="${/비밀번호|password/i.test(j.ask.question) ? "password" : "text"}" id="ansV" placeholder="여기에 적어 주세요" aria-label="답"><button class="primary" type="button" id="ansGo">보내기</button></div>
+    <p class="hint">비밀번호는 기록하지 않고 이 PC 보관함에만 넣어요.</p></div>` : "";
+  const log = (j.kind === "ai" ? (j.log || []) : []).filter(l => l.startsWith("[AI]")).slice(-6).map(l => `<div>${esc(l.replace("[AI] ", ""))}</div>`).join("");
+  return `<section class="card"><h2>AI에게 맡기기</h2>
+    ${run ? `<div class="summary"><span>✨ AI가 사이트를 둘러보는 중</span><small>저장은 막아 두었어요. 끝나면 확인 단계로 넘어가요.</small></div>
+      <div class="hint" style="margin-top:var(--s1);line-height:1.7">${log}</div>${ask}
+      <div class="foot"><span></span><button class="ghost" type="button" id="aiStop">그만두기</button></div>`
+    : `${j.kind === "ai" && j.ok === false ? `<div class="err">${esc(j.error)}</div>` : ""}
+      <p class="lead">위 '영상 주제'에 무엇을 하는 방법인지 한 줄로 적으세요(예: 관장님이 회원가입하는 방법). AI가 보이지 않는 창에서 사이트를 한 번 해 보고 장면 표를 채워요.
+        비밀번호·인증번호는 그때 물어봐요. 결제·삭제·실제 발송은 하지 않아요.</p>
+      <div class="foot"><span class="hint">예상 비용 ${esc(S.st.ai_cost || "")}</span><button class="primary" type="button" id="aiGo">✨ AI에게 맡기기</button></div>`}
+  </section>`;
 }
 
 // ── 2. 확인 ──
@@ -131,6 +169,7 @@ function viewCheck() {
   <p class="lead">누른 버튼 글자를 보고 문장을 자동으로 만들었어요. 문장을 눌러 바로 고칠 수 있어요. 누를 곳·동작은 그대로 두세요.${p.example ? " (1편 예시 — 고치면 사본으로 저장돼요)" : ""}</p>
   <div class="scroll"><table><thead><tr><th>#</th><th>할 말</th><th>동작</th><th>누른 곳</th><th>리허설</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   ${S.removed.length ? `<div class="foot"><span class="hint">지운 장면 ${S.removed.length}개</span><button class="ghost" type="button" id="undo">↶ 지운 장면 되살리기</button></div>` : ""}
+  ${polishBox()}
 </section>
 ${warn}${rehBox}
 <section class="row">
@@ -192,7 +231,7 @@ async function saveScenario() {
 
 // ── 3. 선택 ──
 function radios(name, list, checked, disabled = []) {
-  return list.map((t, i) => `<label class="opt"><input type="radio" name="${name}" value="${esc(t)}" ${t === checked ? "checked" : ""} ${disabled.includes(t) ? "disabled" : ""}><span>${esc(t)}${disabled.includes(t) ? ' <em class="soon">준비 중</em>' : ""}</span></label>`).join("");
+  return list.map((t, i) => `<label class="opt"><input type="radio" name="${name}" value="${esc(t)}" ${t === checked ? "checked" : ""} ${disabled.includes(t) ? "disabled" : ""}><span>${esc(t)}${disabled.includes(t) ? ` <em class="soon">${name === "sh" ? "결과 화면 내보내기에서" : "준비 중"}</em>` : ""}</span></label>`).join("");
 }
 function viewChoose() {
   const c = S.choices;
@@ -308,8 +347,31 @@ function viewResult() {
   ${chap.length ? `<details style="margin-top:var(--s2)"><summary>유튜브 챕터<span>설명란에 붙여 넣기</span></summary><div class="checks" style="flex-direction:column;align-items:flex-start"><pre style="margin:0;font-family:var(--body);line-height:1.7">${esc(chap.join("\n"))}</pre><button class="ghost" type="button" id="copyChap">복사</button></div></details>` : ""}
 </section>
 ${qaCard((r && r.qa) || S.proj.qa, "자동 검수")}
+${langCard()}
 ${exportCard()}
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button><button class="ghost" type="button" id="again">문장 고치고 다시 만들기</button></div>`;
+}
+
+// ── 다른 언어: 번역(AI 또는 직접) → 내보내기에서 언어별 자막·음성 트랙·제목·설명·페이지 ──
+function langCard() {
+  const L = S.proj.langs || {}, T = S.proj.translations || {}, src = S.proj.lang_source || {};
+  const cur = S.lang || Object.keys(T)[0] || "";
+  const chips = Object.entries(L).map(([k, n]) => `<label class="opt"><input type="radio" name="lg" value="${k}" ${k === cur ? "checked" : ""}><span>${esc(n)}${T[k] ? " ✓" : ""}</span></label>`).join("");
+  const tr = (S.langDraft && S.langDraft.lang === cur) ? S.langDraft.items : (T[cur] || {});
+  const left = Object.keys(src).filter(k => !tr[k]).length;
+  const table = cur ? `<div class="qa" style="margin-top:var(--s2)">${Object.entries(src).map(([k, ko]) => `<div style="align-items:flex-start"><span style="flex:1">${esc(ko)}</span>
+      <textarea data-tr="${esc(k)}" rows="2" style="flex:1" placeholder="${esc(L[cur])}">${esc(tr[k] || "")}</textarea></div>`).join("")}</div>
+    <div class="foot"><span class="hint">${left ? `${left}줄 남음 · ` : "✓ 다 채웠어요 · "}기계 번역만이면 어색할 수 있어요. 한 번 읽어 봐 주세요.</span>
+      <span style="display:flex;gap:8px">${(S.st.keys || {}).anthropic ? `<button class="ghost" type="button" id="trAi">${S.translating ? "번역 중…" : `✨ AI로 번역 · ${esc((S.proj.ai_cost || {}).translate || "")}`}</button>` : ""}
+      <button class="primary" type="button" id="trSave">저장</button></span></div>
+    ${(S.st.keys || {}).anthropic ? "" : '<p class="hint">⚙ 설정에 AI 도우미 키를 넣으면 [AI로 번역]이 생겨요. 직접 적어도 돼요.</p>'}` : "";
+  const done = Object.keys(T).map(k => L[k]).join(", ");
+  return `<section class="card"><details ${S.lang ? "open" : ""}><summary>다른 언어<span>${done ? `${esc(done)} · 내보내기에 자막·음성 트랙·제목이 들어가요` : "고르면 언어별 자막·음성 트랙·제목·설명을 만들어요"}</span></summary>
+    <div style="padding:0 14px 8px"><div class="opts">${chips}</div>${table}</div></details></section>`;
+}
+function langCollect() {
+  const items = {}; document.querySelectorAll("[data-tr]").forEach(t => { if (t.value.trim()) items[t.dataset.tr] = t.value.trim(); });
+  return items;
 }
 
 // ── 내보내기: 올릴 곳 고르기 → 올릴 곳별 폴더 + 규격 검사 ──
@@ -360,6 +422,23 @@ function render() {
       startPoll();
     });
     on("#stop", async () => { await api("/api/demo/stop", {}); });
+    on("#mDemo", () => { S.mode = "demo"; render(); });
+    on("#mAi", () => { S.mode = "ai"; render(); });
+    on("#aiKeySave", async () => {
+      const v = $("#aiKey").value.trim(); if (!v) return;
+      const r = await api("/api/key", { name: "anthropic", value: v });
+      if (!r.ok) { alert(r.error); return; }
+      await loadState(); render();
+    });
+    on("#aiGo", async () => {
+      if (!/^https?:\/\//.test(S.url)) { alert("사이트 주소를 http:// 또는 https:// 로 시작하게 적어 주세요."); return; }
+      if (!S.title.trim()) { alert("영상 주제에 무엇을 하는 방법인지 한 줄로 적어 주세요."); $("#ttl").focus(); return; }
+      const r = await api("/api/ai/start", { url: S.url, goal: S.title, brand: S.st.brands.includes(store.get("brand", "")) ? store.get("brand", "") : "" });
+      if (!r.ok) { if (r.need_key) { await loadState(); render(); } else alert(r.error); return; }
+      startPoll();
+    });
+    on("#aiStop", async () => { await api("/api/demo/stop", {}); });
+    on("#ansGo", async () => { const v = $("#ansV").value.trim(); if (!v) return; await api("/api/answer", { value: v }); S.job.ask = null; render(); });
     document.querySelectorAll("[data-open]").forEach(b => b.onclick = () => openProject(b.dataset.open));
   }
   if (S.cur === 1) {
@@ -369,6 +448,18 @@ function render() {
       const i = +b.dataset.del, sc = S.proj.scenario["장면"];
       S.removed.push({ i, s: sc.splice(i, 1)[0] }); S.dirty = true; render();
     });
+    on("#polishGo", async () => {
+      if (S.dirty && !(await saveScenario())) return;
+      S.polishing = true; render();
+      const r = await api("/api/polish", { path: S.proj.path });
+      S.polishing = false;
+      if (!r.ok) { alert(r.error); render(); return; }
+      S.polish = r.suggest; render();
+    });
+    const applyPol = k => { const x = S.proj.scenario["장면"].find(y => y["키"] === k); if (x) { x["말"] = S.polish[k]; S.dirty = true; } delete S.polish[k]; };
+    document.querySelectorAll("[data-pol]").forEach(b => b.onclick = () => { applyPol(b.dataset.pol); render(); });
+    on("#polishAll", () => { Object.keys(S.polish).forEach(applyPol); S.polish = null; render(); });
+    on("#polishNo", () => { S.polish = null; render(); });
     on("#undo", () => { const x = S.removed.pop(); S.proj.scenario["장면"].splice(x.i, 0, x.s); S.dirty = true; render(); });
     document.querySelectorAll("input[name=st]").forEach(r => r.onchange = async () => {
       if (S.dirty && !(await saveScenario())) return;
@@ -456,6 +547,22 @@ function render() {
       const on_ = [...document.querySelectorAll("[data-exp]:checked")].map(x => x.dataset.exp);
       store.set("exportTo", on_); render();
     });
+    document.querySelectorAll("input[name=lg]").forEach(r => r.onchange = () => { S.lang = r.value; S.langDraft = null; render(); });
+    document.querySelectorAll("[data-tr]").forEach(t => t.oninput = () => { S.langDraft = { lang: S.lang || Object.keys(S.proj.translations || {})[0], items: langCollect() }; });
+    on("#trSave", async () => {
+      const lang = S.lang || Object.keys(S.proj.translations || {})[0];
+      const r = await api("/api/translations/save", { path: S.proj.path, lang, items: langCollect() });
+      if (!r.ok) { alert(r.error); return; }
+      S.proj.translations = r.translations; S.langDraft = null; render();
+    });
+    on("#trAi", async () => {
+      const lang = S.lang || Object.keys(S.proj.translations || {})[0];
+      S.translating = true; render();
+      const r = await api("/api/translate", { path: S.proj.path, lang });
+      S.translating = false;
+      if (!r.ok) { alert(r.error); render(); return; }
+      S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path))); S.langDraft = null; render();
+    });
     on("#exportGo", async () => {
       const r = await api("/api/export", { path: S.proj.path, to: exportPicked(), choices: S.choices, vertical: store.get("vertical", "따라가기") });
       if (!r.ok) { alert(r.error); return; }
@@ -473,6 +580,10 @@ function startPoll() {
     const j = await api("/api/job");
     const was = S.job;
     S.job = j;
+    if (j.kind === "ai" && !j.running && was && was.running) {
+      clearInterval(S.poll);
+      if (j.ok) { await loadState(); await openProject(j.result.path, 1); return; }
+    }
     if (j.kind === "demo" && !j.running && was && was.running) {
       clearInterval(S.poll);
       if (j.ok) { await loadState(); await openProject(j.result.path, 1); return; }
@@ -490,9 +601,9 @@ function startPoll() {
       clearInterval(S.poll);
       if (j.ok) S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path)));
     }
-    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && j.kind === "demo") || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
+    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && (j.kind === "demo" || j.kind === "ai")) || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
       const ae = document.activeElement;
-      const typing = ae && (ae.isContentEditable || ae.id === "ansV" || ae.type === "password");
+      const typing = ae && (ae.isContentEditable || ae.id === "ansV" || ae.type === "password" || ae.tagName === "TEXTAREA");
       if (!typing) render();
     }
   }, 1000);

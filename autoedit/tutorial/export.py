@@ -22,6 +22,7 @@ import yaml
 
 from ..ffmpeg_utils import FFMPEG, FFPROBE
 from ..screenfx import ScreenFxSettings, _background
+from . import langs as LG
 from . import sentences as T
 from .compose import FONTS, ass_color, ff_path, render_svg, srt_time, ts
 from .scenario import Scenario
@@ -99,6 +100,7 @@ class Exporter:
         self.made: dict[str, dict[str, list[str]]] = {}               # 올릴 곳 → 항목 → 파일들
         self.texts: dict[str, dict[str, str]] = {}
         self.key = f"{self.final.stat().st_mtime}|{VERSION}"
+        self.tr = {k: v for k, v in LG.load(work).items() if any(x["key"] in v for x in self.tl["lines"])}   # 다른 언어
 
     # ── 공통 재료 ──
     def _cached(self, name: str, make) -> Path:
@@ -546,6 +548,32 @@ class Exporter:
         body = "\n\n".join(f"[{k}]\n{v}" for k, v in t.items())
         (folder / "글.txt").write_text(body + "\n", encoding="utf-8")
 
+    # ── 다른 언어 ──
+    def lang_voice(self, lang: str) -> Path:
+        tr = self.tr[lang]
+        name = f"{self.slug}.{lang}.m4a"
+        f, kp = self.cache / name, self.cache / (name + ".key")
+        k = self.key + "|읽기2|" + json.dumps(tr, ensure_ascii=False, sort_keys=True)   # 읽는 방식이 바뀌면 다시
+        if not (f.exists() and kp.exists() and kp.read_text(encoding="utf-8") == k):
+            self.say(f"[내보내기] {LG.LANGS[lang]} 음성 트랙 만드는 중")
+            LG.voice_track(self.tl, tr, lang, f, self.work, log=self.say)
+            kp.write_text(k, encoding="utf-8")
+        return f
+
+    def lang_bundle(self, dest: str, folder: Path) -> list[str]:
+        """유튜브: 언어별 자막(.xx.srt)·음성 트랙(.xx.m4a, '오디오 트랙 추가')·제목·설명."""
+        t = self.texts[dest]
+        for lang, tr in self.tr.items():
+            name = LG.LANGS[lang]
+            LG.srt(self.tl, tr, folder / f"{self.slug}.{lang}.srt")
+            place(self.lang_voice(lang), folder / f"{self.slug}.{lang}.m4a")
+            if tr.get("제목"):
+                t[f"제목 ({name})"] = tr["제목"][:100]
+            if tr.get("설명"):
+                steps = "\n".join(f"{i + 1}. {tr.get(f'단계{i + 1}', s)}" for i, s in enumerate(self.sc.steps))
+                t[f"설명 ({name})"] = f"{tr['설명']}\n\n{steps}\n\n{t.get('링크', '')}".strip()
+        return ["다국어"]
+
     # ── 웹 묶음 ──
     def web_bundle(self, folder: Path) -> list[str]:
         """웹: 영상(AV1+H.264), 포스터, VTT, 붙여 넣기 코드, 영상 전용 페이지(단계별 글·대본·FAQ·구조화 데이터·OG), 사이트맵, 제출 안내."""
@@ -558,6 +586,11 @@ class Exporter:
         og = place(self.og_image(), folder / f"{self.slug}-대표이미지.jpg")
         vtt = folder / f"{self.slug}.vtt"
         self.srt_to_vtt(self.work / f"{self.sc.file_name}.srt", vtt)
+        lang_tracks = ""
+        for lang in self.tr:                                   # 다른 언어 자막
+            srt = LG.srt(self.tl, self.tr[lang], self.cache / f"{lang}.srt")
+            self.srt_to_vtt(srt, folder / f"{self.slug}.{lang}.vtt")
+            lang_tracks += f'  <track kind="subtitles" src="{self.slug}.{lang}.vtt" srclang="{lang}" label="{LG.LANGS[lang]}">\n'
         shots = self.scene_shots()
         img_dir = folder / "장면"
         for no, text, f in shots:
@@ -572,7 +605,7 @@ class Exporter:
                  f'style="width:100%;height:auto" aria-label="{html.escape(self.sc.title_plain)}">\n'
                  f'  <source src="{av1.name}" type=\'video/mp4; codecs="av01.0.08M.08"\'>\n'
                  f'  <source src="{h264.name}" type="video/mp4">\n'
-                 f'  <track kind="captions" src="{vtt.name}" srclang="ko" label="한국어" default>\n</video>')
+                 f'  <track kind="captions" src="{vtt.name}" srclang="ko" label="한국어" default>\n{lang_tracks}</video>')
         (folder / "붙여넣기코드.html").write_text(
             "<!-- 영상 파일·포스터·자막을 같은 폴더에 올리고 이 코드를 붙여 넣으세요. 누르기 전에는 영상을 내려받지 않아요(preload=none). -->\n"
             + embed + "\n", encoding="utf-8")
@@ -623,10 +656,14 @@ class Exporter:
                    f'<meta name="twitter:description" content="{html.escape(desc)}">\n'
                    f'<meta name="twitter:image" content="{base_url}/{self.slug}-대표이미지.jpg">')
         ld = "\n".join(f'<script type="application/ld+json">{json.dumps(x, ensure_ascii=False)}</script>' for x in (video_ld, howto_ld, faq_ld))
+        alternates = "\n".join([f'<link rel="alternate" hreflang="ko" href="{page_url}">']
+                                + [f'<link rel="alternate" hreflang="{lg}" href="{page_url}/{lg}">' for lg in self.tr]
+                                + ([f'<link rel="alternate" hreflang="x-default" href="{page_url}">'] if self.tr else []))
         page = f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)}</title><meta name="description" content="{html.escape(desc)}">
 <link rel="canonical" href="{page_url}">
+{alternates}
 {og_tags}
 {ld}
 <style>body{{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;line-height:1.7}}img{{max-width:100%;height:auto;border-radius:8px}}ol{{padding-left:20px}}</style>
@@ -640,6 +677,28 @@ class Exporter:
 </body></html>
 """
         (folder / "영상페이지.html").write_text(page, encoding="utf-8")
+        for lg, tr in self.tr.items():                      # 언어별 페이지(같은 영상, 그 언어 자막을 먼저)
+            ttl, dsc = tr.get("제목", title), tr.get("설명", desc)
+            steps_l = "".join(f'<h2 id="step{i + 1}">{i + 1}. {html.escape(tr.get(f"단계{i + 1}", s_["name"]))}</h2>'
+                              + "".join(f"<p>{html.escape(tr[x['key']])}</p>" for x in self.tl["lines"]
+                                        if s_["start"] - 0.05 <= x["t"] < s_["end"] and tr.get(x["key"]))
+                              for i, s_ in enumerate(self.tl["steps"]))
+            emb = embed.replace('srclang="ko" label="한국어" default>', 'srclang="ko" label="한국어">').replace(
+                f'srclang="{lg}" label="{LG.LANGS[lg]}">', f'srclang="{lg}" label="{LG.LANGS[lg]}" default>')
+            (folder / f"영상페이지.{lg}.html").write_text(f"""<!doctype html>
+<html lang="{lg}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{html.escape(ttl)}</title><meta name="description" content="{html.escape(dsc)}">
+<link rel="canonical" href="{page_url}/{lg}">
+{alternates}
+<meta property="og:title" content="{html.escape(ttl)}"><meta property="og:description" content="{html.escape(dsc)}">
+<meta property="og:image" content="{base_url}/{self.slug}-대표이미지.jpg"><meta property="og:url" content="{page_url}/{lg}">
+<meta name="twitter:card" content="summary_large_image">
+<style>body{{font-family:system-ui,sans-serif;max-width:860px;margin:0 auto;padding:16px;line-height:1.7}}</style>
+</head><body><h1>{html.escape(ttl)}</h1><p>{html.escape(dsc)}</p>
+{emb}
+{steps_l}
+</body></html>
+""", encoding="utf-8")
         made += ["단계별글", "대본전문"]
         sitemap = f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
@@ -761,6 +820,8 @@ class Exporter:
                 made += self.blog_bundle(folder)
                 place(self.v_1080(), folder / f"{self.slug}.mp4")
             self.make_texts(d)
+            if "다국어" in items and self.tr:
+                made += self.lang_bundle(d, folder)
             self.write_texts(d, folder)
             t = self.texts[d]
             made += [k for k, key in (("제목", "제목"), ("설명", "설명"), ("해시태그", "해시태그"), ("고정댓글", "고정 댓글"),
@@ -911,6 +972,17 @@ class Exporter:
                 res.append({"이름": f"빠짐: {names.get(it, it)}", "판정": "fail", "내용": "만들지 못했어요"})
             for it in sorted(want & soon):
                 res.append({"이름": f"{names.get(it, it)}", "판정": "soon", "내용": "다음 업데이트에서 열려요"})
+            if "다국어" in want and not self.tr:                # 번역이 없으면 만들 것이 없음(실패 아님)
+                res = [r for r in res if r["이름"] != f"빠짐: {names.get('다국어')}"]
+                res.append({"이름": names.get("다국어", "다국어"), "판정": "soon",
+                            "내용": "다른 언어를 추가하면 만들어요 (결과 화면 → 다른 언어)"})
+            for lg in (self.tr if "다국어" in made else []):
+                f = folder / f"{self.slug}.{lg}.m4a"
+                dur = float(self.probe(f)["format"]["duration"]) if f.exists() else 0
+                ok = abs(dur - self.tl["total"]) < 0.6
+                n = (folder / f"{self.slug}.{lg}.srt").read_text(encoding="utf-8").count(" --> ") if (folder / f"{self.slug}.{lg}.srt").exists() else 0
+                res.append({"이름": f"{LG.LANGS[lg]}: 자막·음성 트랙", "판정": "ok" if ok and n else "fail",
+                            "내용": f"자막 {n}줄 · 음성 {dur:.1f}초 (영상 {self.tl['total']:.1f}초)"})
             worst = "fail" if any(r["판정"] == "fail" for r in res) else "warn" if any(r["판정"] == "warn" for r in res) else "ok"
             out[d] = {"이름": p["이름"], "폴더": str(folder), "판정": worst, "검사": res,
                       "항목": [names.get(i, i) for i in sorted(made)]}

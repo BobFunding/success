@@ -29,7 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = Path(__file__).parent / "web"
 PROJECTS = ROOT / "output" / "tutorial"
 EXAMPLE = ROOT / "tutorials" / "ep1" / "scenario.yaml"
-from . import voices as V   # 목소리 목록(AI·유료·내 목소리·자막만)은 voices.py
+from . import assistant as A  # AI 도우미(키 있을 때만)
+from . import langs as LG      # 다국어
+from . import voices as V      # 목소리 목록(AI·유료·내 목소리·자막만)은 voices.py
 
 
 def work_dir(scn: Path) -> Path:
@@ -177,6 +179,10 @@ def project_view(path: Path) -> dict:
     return {"path": str(path), "scenario": d, "files": files, "chapters": chap, "pronunciation": pron, "qa": qa_res, "secrets": secrets_needed, "rehearsal": reh, "warnings": warn, "error": err, "work": str(w),
             "choices": choices, "export": export,
             "lines": [{"key": l.key, "text": l.text} for l in sc.lines()] if sc else [],
+            "lang_source": LG.source(sc) if sc else {},
+            "translations": LG.load(w),
+            "langs": LG.LANGS,
+            "ai_cost": {"translate": A.estimate("translate", len(sc.lines()))["text"]} if sc else {},
             "my_voice": [l.key for l in sc.lines() if not V.my_voice_missing([l], w)] if sc else [], "platforms": platforms_view(), "video": str(vids[0]) if vids else "", "example": path.resolve() == EXAMPLE.resolve()}
 
 
@@ -224,6 +230,21 @@ def job_demo(job: Job, url: str, topic: str, brand: str, tone: str, next_topic: 
     path = PROJECTS / sc["파일이름"] / "scenario.yaml"
     save(sc, path)
     return {"path": str(path), "scenes": len(sc["장면"])}
+
+
+def job_ai(job: Job, url: str, goal: str, brand: str, tone: str):
+    """AI에게 맡기기: AI가 사람 대신 한 번 해 보이고, 시연 때와 같은 방식으로 장면 표를 만든다."""
+    from . import assistant as A
+    from .demo_record import save
+    llm = A.get_llm()
+    job.stage("AI가 사이트를 둘러보는 중")
+    r = A.explore(llm, url, goal, ask=job.ask, log=job.log, stop=job.stop.is_set, tone=tone or "차분", brand=brand,
+                  headless=os.environ.get("TUTORIAL_HEADLESS", "1") == "1")
+    sc = r["scenario"]
+    path = PROJECTS / sc["파일이름"] / "scenario.yaml"
+    save(sc, path)
+    job.log(f"[AI] {r['steps']}번 조작, 어림 비용 {r['cost']}")
+    return {"path": str(path), "scenes": len(sc["장면"]), "cost": r["cost"]}
 
 
 def job_rehearse(job: Job, path: Path, ch: dict):
@@ -411,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path == "/api/state":
-                return self.json({"projects": list_projects(), "brands": S.brand_names(), "voices": [v["name"] for v in V.choices()], "voice_list": V.choices(), "keys": keys_view(),
+                return self.json({"projects": list_projects(), "brands": S.brand_names(), "voices": [v["name"] for v in V.choices()], "voice_list": V.choices(), "keys": keys_view(), "ai_cost": A.estimate("explore")["text"],
                                   "rules": R.merged(R.load_user()), "default_rules": R.DEFAULT, "job": JOB.view(),
                                   "capture": __import__("autoedit.tutorial.capture", fromlist=["x"]).capture_method()})
             if u.path == "/api/project":
@@ -443,6 +464,31 @@ class Handler(BaseHTTPRequestHandler):
                 ok = JOB.start("demo", lambda j: job_demo(j, b["url"], b.get("topic", ""), b.get("brand", ""),
                                                           b.get("tone", ""), b.get("next", "")), count=0)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/ai/start":
+                if not A.ensure_key():
+                    return self.json({"ok": False, "need_key": True, "error": "AI 도우미 키가 없어요."})
+                goal = str(b.get("goal", "")).strip()
+                if not goal:
+                    return self.json({"ok": False, "error": "무엇을 하는 방법인지 한 줄로 적어 주세요. 예: 관장님이 회원가입하는 방법"})
+                ok = JOB.start("ai", lambda j: job_ai(j, b["url"], goal, b.get("brand", ""), b.get("tone", "")), count=0)
+                return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path in ("/api/translate", "/api/polish"):
+                p = Path(b["path"])
+                sc = S.load(p)
+                try:
+                    llm = A.get_llm()
+                except A.LLMUnavailable as e:
+                    return self.json({"ok": False, "need_key": True, "error": str(e)})
+                if u.path == "/api/polish":
+                    lines = {s_.key: s_.line.text for s_ in sc.scenes}
+                    return self.json({"ok": True, "suggest": A.polish(llm, lines, sc.brand.tone, sc.brand.name)})
+                lang = str(b.get("lang", ""))
+                items = A.translate(llm, LG.source(sc), lang, sc.brand.name)
+                LG.save(work_dir(p), lang, items)
+                return self.json({"ok": True, "items": items})
+            if u.path == "/api/translations/save":
+                d = LG.save(work_dir(Path(b["path"])), str(b.get("lang", "")), dict(b.get("items") or {}))
+                return self.json({"ok": True, "translations": d})
             if u.path == "/api/demo/stop":
                 JOB.stop.set()
                 return self.json({"ok": True})

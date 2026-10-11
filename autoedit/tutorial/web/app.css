@@ -215,3 +215,6 @@ input[type=number]{font:inherit;color:var(--fg);background:var(--bg);border:1px 
 [hidden]{display:none!important}
 td:nth-child(3){white-space:nowrap}
 .chip.soon{background:transparent;border:1px dashed var(--muted);color:var(--muted)}
+.steps3{list-style:none;padding:0;margin:var(--s2) 0;display:grid;gap:10px}
+.steps3 li{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.steps3 input{flex:1;min-width:220px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;font:inherit;background:var(--bg)}
