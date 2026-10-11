@@ -67,8 +67,17 @@ function viewStart() {
   const j = S.job || {};
   const rec = j.kind === "demo" && j.running;
   const tip = store.get("tipDone", false) ? "" : `<div class="tip"><span>처음이세요? ① 사이트 주소 넣기 → ② [한 번 해 보이기] → ③ [다음]만 누르면 영상이 완성돼요.</span><button class="x" id="tipX" type="button">알겠어요</button></div>`;
-  const projects = (S.st.projects || []).map(p => `<div class="pitem"><span>${esc(p.title)} ${p.example ? '<span class="chip">예시 · 1편</span>' : ""}
-      <small>장면 ${p.scenes}개${p.video ? " · 영상 있음" : ""}</small></span><button class="ghost" type="button" data-open="${esc(p.path)}">열기</button></div>`).join("");
+  const projects = (S.st.projects || []).map(p => `<div class="pitem"><label style="display:flex;gap:10px;align-items:center;flex:1">
+      <input type="checkbox" data-batch="${esc(p.path)}" ${(S.batchSel || []).includes(p.path) ? "checked" : ""} aria-label="한꺼번에 만들기에 넣기">
+      <span>${esc(p.title)} ${p.example ? '<span class="chip">예시 · 1편</span>' : ""}${p.series ? ` <span class="chip">${esc(p.series)} ${esc(p.no)}편</span>` : ""}
+      <small>장면 ${p.scenes}개${p.video ? " · 영상 있음" : ""}${p.interrupted ? " · ⏸ 만들다 멈춤" : ""}</small></span></label>
+      ${p.interrupted ? `<button class="primary" type="button" data-resume="${esc(p.path)}">이어서 만들기</button>` : ""}
+      <button class="ghost" type="button" data-open="${esc(p.path)}">열기</button></div>`).join("");
+  const nb = (S.batchSel || []).length;
+  const batch = j.kind === "batch" && j.running ? batchBox(j)
+    : (j.kind === "batch" && !j.running && j.result ? `<div class="summary"><span>한꺼번에 만들기 끝 · ${j.result.batch.filter(x => x.ok).length}/${j.result.batch.length}편 완성</span>
+        <small>${j.result.batch.filter(x => !x.ok).map(x => `${esc(x.title)}: ${esc(x.error)}`).join(" · ")}</small></div>` : "")
+    + (nb ? `<div class="foot"><span class="hint">고른 ${nb}편을 순서대로 만들어요. 지난번 목소리·꾸미기 그대로, 녹화는 보이지 않는 창에서.</span><button class="primary" type="button" id="batchGo">${nb}편 한꺼번에 만들기</button></div>` : "");
   const demo = rec ? `
     <div class="browser"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>${esc(S.url)}</span>
       <span class="live"><i></i>기록 중 · 동작 ${j.count || 0}개</span></div>
@@ -92,7 +101,7 @@ function viewStart() {
 </section>
 ${S.mode === "ai" ? aiCard() : `<section class="card"><h2>한 번 해 보이기</h2>${demo}</section>`}
 <section class="card"><h2>지난 작업</h2><p class="lead">열어서 문장 하나만 고치고 다시 만들 수 있어요.
-  <label class="ghost" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer">📥 공유 파일 가져오기<input type="file" id="importF" accept=".zip" hidden></label></p><div class="plist">${projects || '<p class="hint">아직 없어요.</p>'}</div></section>`;
+  <label class="ghost" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer">📥 공유 파일 가져오기<input type="file" id="importF" accept=".zip" hidden></label></p><div class="plist">${projects || '<p class="hint">아직 없어요.</p>'}</div>${batch}</section>`;
 }
 
 // 시리즈·공유(접어 둠): 같은 시리즈면 '다음 편 안내'가 자동으로 이어진다
@@ -117,6 +126,14 @@ function polishBox() {
     const sc_ = sc.find(x => x["키"] === k) || {};
     return `<div><span><s style="color:var(--muted)">${esc(sc_["말"] || "")}</s><br>${esc(sg[k])}</span><button class="ghost" type="button" data-pol="${esc(k)}">적용</button></div>`; }).join("")}</div>
     <div class="foot"><button class="ghost" type="button" id="polishNo">닫기</button><button class="primary" type="button" id="polishAll">모두 적용</button></div></div>`;
+}
+
+function batchBox(j) {
+  const b = j.batch || {};
+  const ask = j.ask ? `<div class="card" style="border-color:var(--blue);margin-top:var(--s2)"><h2>잠깐, 도와주세요</h2><p class="lead">${esc(j.ask.question)}</p>
+    ${j.ask.shot ? `<img src="${fileUrl(j.ask.shot)}&t=${j.ask.asked}" alt="지금 화면" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ""}
+    <div class="inline" style="margin-top:var(--s2)"><input type="text" id="ansV" placeholder="여기에 적어 주세요" aria-label="답"><button class="primary" type="button" id="ansGo">보내기</button></div></div>` : "";
+  return `<div class="summary" style="margin-top:var(--s2)"><span>⏳ 한꺼번에 만드는 중 ${b.i || 1}/${b.n || "?"} · ${esc(b.title || "")}</span><small>${esc(j.stage || "")}${j.eta != null ? ` · 이 편 ${mins(j.eta)} 남음` : ""}</small></div>${ask}`;
 }
 
 // AI에게 맡기기: 키가 없으면 그 자리에서 3단계 안내, 있으면 예상 비용 → 시작 → 진행·질문
@@ -181,7 +198,7 @@ function viewCheck() {
   const privChips = [...priv].map(x => `<span class="chip blur">${esc(nameOfField(scenes, x))}</span>`).join("") || '<span class="hint">없음</span>';
   const warn = (p.warnings || []).map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("")
     + (((p.pronunciation || {}).items || []).filter(i => !i.ok && !(d["장면"] || []).some(s => s["키"] === i["키"])).map(i => `<div class="verdict has-warn">⚠ 발음(${esc(i["키"])}): "${esc(i["말"])}" 이 "${esc(i["들림"])}" 로 들려요. 인트로·아웃트로 문장은 브랜드 인사말에서 고칠 수 있어요.</div>`).join(""));
-  const rehBox = reh ? (reh.ok ? `<div class="summary"><span>✓ 리허설 통과 · 누를 곳 ${scenes.length}곳 모두 찾음</span></div>`
+  const rehBox = reh ? (reh.ok ? `<div class="summary"><span>✓ 리허설 통과 · 누를 곳 ${scenes.length}곳 모두 찾음</span></div>${(reh["바뀐장면"] || []).length ? `<div class="verdict has-warn">⚠ 지난 녹화 뒤 사이트가 바뀐 장면 ${reh["바뀐장면"].length}개: ${reh["바뀐장면"].map(c => `${esc(c["키"])}(${esc(c["이유"])})`).join(", ")} — 다음 만들기 때 녹화만 새로 해요(목소리·문장은 그대로).</div>` : ""}`
     : `<div class="err"><b>${reh["장면"]}번 장면에서 멈췄어요.</b><span>${esc(reh["메시지"])}</span></div>`) : "";
   const running = S.job && S.job.running && S.job.kind === "rehearse";
   return `${p.error ? `<div class="err">${esc(p.error)}</div>` : ""}
@@ -453,6 +470,22 @@ function render() {
       await loadState(); await openProject(r.path, 1);
     };
     on("#mDemo", () => { S.mode = "demo"; render(); });
+    document.querySelectorAll("[data-batch]").forEach(c => c.onchange = () => {
+      S.batchSel = [...document.querySelectorAll("[data-batch]:checked")].map(x => x.dataset.batch); render();
+    });
+    on("#batchGo", async () => {
+      const r = await api("/api/batch", { items: S.batchSel.map(path => ({ path })) });
+      if (!r.ok) { alert(r.error); return; }
+      S.batchSel = []; startPoll();
+    });
+    document.querySelectorAll("[data-resume]").forEach(b => b.onclick = async () => {
+      const pp = (S.st.projects || []).find(x => x.path === b.dataset.resume) || {};
+      await openProject(b.dataset.resume, 3);
+      const it = pp.interrupted || {};
+      const r = await api("/api/make", { path: b.dataset.resume, choices: it.choices || S.choices, preview: !!it.preview });
+      if (!r.ok) { alert(r.error); return; }
+      startPoll(); render();
+    });
     document.querySelectorAll("input[name=pu]").forEach(r => r.onchange = () => { S.purpose = r.value; });
     on("#mAi", () => { S.mode = "ai"; render(); });
     on("#aiKeySave", async () => {
@@ -623,6 +656,7 @@ function startPoll() {
     const j = await api("/api/job");
     const was = S.job;
     S.job = j;
+    if (j.kind === "batch" && !j.running && was && was.running) { clearInterval(S.poll); await loadState(); render(); return; }
     if (j.kind === "ai" && !j.running && was && was.running) {
       clearInterval(S.poll);
       if (j.ok) { await loadState(); await openProject(j.result.path, 1); return; }
@@ -644,7 +678,7 @@ function startPoll() {
       clearInterval(S.poll);
       if (j.ok) S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path)));
     }
-    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && (j.kind === "demo" || j.kind === "ai")) || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
+    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && (j.kind === "demo" || j.kind === "ai" || j.kind === "batch")) || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
       const ae = document.activeElement;
       const typing = ae && (ae.isContentEditable || ae.id === "ansV" || ae.type === "password" || ae.tagName === "TEXTAREA");
       if (!typing) render();
@@ -770,4 +804,21 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") $("#drawer")
     startPoll();
   }
   nav(); render();
+  checkUpdate();
 })();
+
+// 새 버전 알림: 켤 때 한 번 조용히 확인 → 있으면 위에 작은 단추(누르면 내 작업은 그대로 두고 프로그램만 받음)
+async function checkUpdate() {
+  if (store.get("updSkip", "") === new Date().toDateString()) return;
+  const r = await api("/api/update/check", {});
+  if (!r.ok || !r.behind) return;
+  const b = $("#updBadge");
+  b.hidden = false;
+  b.innerHTML = `<button class="primary" type="button" id="updGo" title="내 작업(영상·장면 표·보관함·브랜드)은 그대로예요">새 버전이 있어요 · 업데이트</button> <button class="ghost" type="button" id="updLater">나중에</button>`;
+  $("#updLater").onclick = () => { store.set("updSkip", new Date().toDateString()); b.hidden = true; };
+  $("#updGo").onclick = async () => {
+    if (S.job && S.job.running) { alert("만드는 중에는 업데이트하지 않아요. 끝난 뒤에 눌러 주세요."); return; }
+    const x = await api("/api/update/apply", {});
+    alert(x.ok ? x.msg : x.error); if (x.ok) b.hidden = true;
+  };
+}

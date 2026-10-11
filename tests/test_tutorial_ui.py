@@ -221,3 +221,55 @@ def test_series_links_next_episode(tmp_path):
     assert da["다음편"] == "로그인" and da["아웃트로"][-1]["말"] == "다음 영상에서는 로그인 방법을 알려 드릴게요. 태권 월드였습니다."
     assert "다음편" not in Y.safe_load(b.read_text(encoding="utf-8"))
     assert [e["편"] for e in ops.series_list(ps)["태권월드 사용법"]] == [1, 2]
+
+
+def test_site_change_detection(tmp_path):
+    import json as J
+    from autoedit.tutorial import maker
+    def log(dx=0.0, extra=False):
+        cl = [{"t": 1.5, "x": 100, "y": 100}, {"t": 3.5, "x": 400 + dx, "y": 300}]
+        if extra:
+            cl.append({"t": 3.8, "x": 10, "y": 10})
+        return {"lines": [{"key": "A", "t": 1.0}, {"key": "B", "t": 3.0}], "clicks": cl}
+    (tmp_path / "log_rec.json").write_text(J.dumps(log()))
+    (tmp_path / "log_dry.json").write_text(J.dumps(log(4)))
+    assert maker.site_changes(tmp_path) == []                                  # 몇 px 는 같은 것
+    (tmp_path / "log_dry.json").write_text(J.dumps(log(60)))
+    assert [c["키"] for c in maker.site_changes(tmp_path)] == ["B"]
+    (tmp_path / "log_dry.json").write_text(J.dumps(log(0, extra=True)))
+    assert "횟수" in maker.site_changes(tmp_path)[0]["이유"]
+
+
+def test_resume_marker_and_batch_keep_going(tmp_path, monkeypatch):
+    monkeypatch.setattr(SV, "work_dir", lambda p: tmp_path / p.parent.name)
+    seen = []
+    def fake(job, path, ch, preview=False, allow_real=False):
+        seen.append((path.parent.name, (tmp_path / path.parent.name / "작업중.json").exists(), ch))
+        if path.parent.name == "bad":
+            raise ValueError("사이트가 바뀌었어요")
+        return {"final": "x.mp4"}
+    monkeypatch.setattr(SV, "_job_make", fake)
+    (tmp_path / "ok").mkdir(); (tmp_path / "ok" / "choices.json").write_text('{"voice": "선희 · 밝게"}', encoding="utf-8")
+    class J:
+        def update(self, **k): pass
+        def log(self, m): pass
+    monkeypatch.setattr(SV.S, "load", lambda p: type("X", (), {"title_plain": p.parent.name})())
+    r = SV.job_batch(J(), [{"path": str(tmp_path / "bad" / "scenario.yaml")}, {"path": str(tmp_path / "ok" / "scenario.yaml")}])
+    assert [x["ok"] for x in r["batch"]] == [False, True]                      # 한 편이 멈춰도 다음 편
+    assert seen[0][1] and seen[1][2] == {"voice": "선희 · 밝게"}               # 만드는 동안 표시, 지난번 선택 그대로
+    assert not (tmp_path / "ok" / "작업중.json").exists() and not (tmp_path / "bad" / "작업중.json").exists()
+
+
+def test_update_check_counts_new_commits(tmp_path, monkeypatch):
+    import subprocess as sp
+    up, me = tmp_path / "up", tmp_path / "me"
+    g = lambda *a, cwd: sp.run(["git", *a], cwd=cwd, check=True, capture_output=True)
+    up.mkdir(); g("init", "-q", "-b", "main", cwd=up)
+    g("-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "1", cwd=up)
+    g("clone", "-q", str(up), str(me), cwd=tmp_path)
+    g("-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "--allow-empty", "-m", "2", cwd=up)
+    monkeypatch.setattr(SV, "ROOT", me)
+    assert SV.update_check() == {"ok": True, "behind": 1, "branch": "main"}
+    assert SV.update_apply()["ok"] and SV.update_check()["behind"] == 0
+    monkeypatch.setattr(SV, "ROOT", tmp_path / "nogit")
+    assert SV.update_check()["ok"] is False

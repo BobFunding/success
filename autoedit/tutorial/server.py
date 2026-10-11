@@ -149,9 +149,11 @@ def list_projects() -> list[dict]:
             d = yaml.safe_load(p.read_text(encoding="utf-8"))
             w = work_dir(p)
             vids = sorted(w.glob("*_1440p60.mp4"))
+            mark = w / "작업중.json"
             out.append({"path": str(p), "title": str(d["제목"]).replace("[", "").replace("]", ""),
                         "scenes": len(d.get("장면") or []), "example": p == EXAMPLE, "video": str(vids[0]) if vids else "",
-                        "updated": p.stat().st_mtime})
+                        "updated": p.stat().st_mtime, "series": d.get("시리즈", ""), "no": d.get("편", ""),
+                        "interrupted": json.loads(mark.read_text(encoding="utf-8")) if mark.exists() and not JOB.view().get("running") else None})
         except Exception:
             continue
     return out
@@ -264,6 +266,60 @@ def job_rehearse(job: Job, path: Path, ch: dict):
 
 
 def job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real: bool = False):
+    """만들기. 시작할 때 작업 폴더에 '작업중.json' 을 남기고 끝나면 지운다 — 컴퓨터가 꺼지거나 창을 닫아 중간에 멈추면
+    다음에 열 때 [이어서 만들기]가 보인다(목소리·녹화·조각은 만들어 둔 것을 다시 쓰므로 남은 곳부터)."""
+    mark = work_dir(path) / "작업중.json"
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.write_text(json.dumps({"choices": {k: v for k, v in ch.items() if k != "allow_real"}, "preview": preview,
+                                "started": time.time()}, ensure_ascii=False), encoding="utf-8")
+    try:
+        return _job_make(job, path, ch, preview, allow_real)
+    finally:
+        mark.unlink(missing_ok=True)
+
+
+def job_batch(job: Job, items: list[dict]):
+    """여러 편 한꺼번에: 순서대로 만든다. 한 편이 멈춰도 다음 편으로(끝에 편마다 결과)."""
+    out = []
+    for i, it in enumerate(items):
+        p = Path(it["path"])
+        title = S.load(p).title_plain
+        job.update(batch={"i": i + 1, "n": len(items), "title": title})
+        job.log(f"[일괄] {i + 1}/{len(items)} {title}")
+        try:
+            cj = work_dir(p) / "choices.json"            # 지난번에 고른 목소리·꾸미기를 그대로
+            ch = it.get("choices") or (json.loads(cj.read_text(encoding="utf-8")) if cj.exists() else {})
+            r = job_make(job, p, ch)
+            out.append({"path": str(p), "title": title, "ok": True, "final": r.get("final", "")})
+        except Exception as e:
+            job.log(f"[일괄] {title}: 멈춤 — {e}")
+            out.append({"path": str(p), "title": title, "ok": False, "error": str(e)})
+    return {"batch": out}
+
+
+def update_check() -> dict:
+    """새 버전 알림: 이 폴더가 git 으로 받은 것이면 원격과 비교한다(15초 안에 안 되면 조용히 넘어감)."""
+    root = ROOT
+    if not (root / ".git").exists():
+        return {"ok": False, "how": "zip 으로 받은 폴더예요. 새 버전은 GitHub 에서 다시 받아 주세요."}
+    try:
+        br = subprocess.run(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5).stdout.strip()
+        subprocess.run(["git", "-C", str(root), "fetch", "-q", "origin", br], capture_output=True, timeout=15)
+        n = subprocess.run(["git", "-C", str(root), "rev-list", "--count", f"HEAD..origin/{br}"], capture_output=True, text=True, timeout=5).stdout.strip()
+        return {"ok": True, "behind": int(n or 0), "branch": br}
+    except Exception as e:
+        return {"ok": False, "how": f"확인하지 못했어요({type(e).__name__})."}
+
+
+def update_apply() -> dict:
+    """버튼 하나로 업데이트: 내 작업(output/·보관함·브랜드)은 그대로 두고 프로그램만 받는다(내가 고친 프로그램 파일이 있으면 멈춤)."""
+    r = subprocess.run(["git", "-C", str(ROOT), "pull", "--ff-only", "-q"], capture_output=True, text=True, timeout=120)
+    if r.returncode:
+        return {"ok": False, "error": "업데이트하지 못했어요. 프로그램 파일을 직접 고쳤다면 개발자에게 물어봐 주세요.\n" + r.stderr[-300:]}
+    return {"ok": True, "msg": "업데이트했어요. 창을 닫고 프로그램을 다시 켜 주세요."}
+
+
+def _job_make(job: Job, path: Path, ch: dict, preview: bool = False, allow_real: bool = False):
     from . import maker
     from . import secrets as SEC
     sc = scenario_with_choices(path, ch)
@@ -467,6 +523,16 @@ class Handler(BaseHTTPRequestHandler):
                 ok = JOB.start("demo", lambda j: job_demo(j, b["url"], b.get("topic", ""), b.get("brand", ""),
                                                           b.get("tone", ""), b.get("next", ""), b.get("purpose", "고객 안내")), count=0)
                 return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/batch":
+                items = [x for x in b.get("items", []) if isinstance(x, dict) and x.get("path")]
+                if not items:
+                    return self.json({"ok": False, "error": "만들 작업을 하나 이상 골라 주세요."})
+                ok = JOB.start("batch", lambda j: job_batch(j, items), count=0)
+                return self.json({"ok": ok} if ok else {"ok": False, "error": "다른 작업이 진행 중이에요."})
+            if u.path == "/api/update/check":
+                return self.json(update_check())
+            if u.path == "/api/update/apply":
+                return self.json(update_apply())
             if u.path == "/api/report":
                 pth = Path(b["path"]) if b.get("path") else None
                 return self.json({"ok": True, "text": OPS.report(JOB.view(), pth if pth and allowed(pth) else None)})

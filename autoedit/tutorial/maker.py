@@ -58,12 +58,46 @@ def estimate(sc: Scenario, dur: dict, stages=STAGES, reuse_rec: bool = False, pr
     return {n: v for n, v in est.items() if keep.get(n, "편집") in stages and v}
 
 
+MOVED_PX = 24     # 녹화 픽셀 기준(리허설과 녹화는 보통 5px 안에서 같음)
+
+
+def site_changes(work: Path) -> list[dict]:
+    """사이트 변경 감지: 방금 리허설에서 누른 자리와 지난 녹화에서 누른 자리를 장면마다 비교한다.
+    누른 횟수가 다르거나 MOVED_PX 넘게 옮겨졌으면 '바뀐 장면'."""
+    try:
+        a = json.loads((work / "log_dry.json").read_text(encoding="utf-8"))
+        b = json.loads((work / "log_rec.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    def per_scene(log):
+        lines = [(ln["key"], ln["t"]) for ln in log["lines"]] + [("", float("inf"))]
+        return {k: [(c["x"], c["y"]) for c in log["clicks"] if t <= c["t"] < lines[i + 1][1]] for i, (k, t) in enumerate(lines[:-1])}
+    pa, pb = per_scene(a), per_scene(b)
+    out = []
+    for k, ca in pa.items():
+        cb = pb.get(k)
+        if cb is None:
+            out.append({"키": k, "이유": "새 장면"}); continue
+        if len(ca) != len(cb):
+            out.append({"키": k, "이유": f"누르는 횟수가 달라짐({len(cb)} → {len(ca)})"}); continue
+        mv = max([max(abs(x[0] - y[0]), abs(x[1] - y[1])) for x, y in zip(ca, cb)] or [0])
+        if mv > MOVED_PX:
+            out.append({"키": k, "이유": f"누를 곳이 옮겨짐({mv:.0f}px)"})
+    return out
+
+
 def rehearse(sc: Scenario, work: Path, dur: dict, log=print) -> dict:
     """리허설(창 없이, 녹화 없이). 결과를 rehearsal.json 에 남긴다 — 화면은 이걸 읽어 그 장면 줄을 빨갛게 표시한다."""
     from .recorder import SceneError
     res = {"ok": True, "장면수": len(sc.scenes)}
     try:
         Recorder(sc, dur, log).run("dry", work)
+        ch = site_changes(work) if (work / "cap.mkv.key").exists() else []
+        if ch:                          # 지난 녹화가 지금 사이트와 다름 → 다음 만들기 때 녹화만 새로(목소리·카드는 그대로)
+            (work / "cap.mkv.key").unlink(missing_ok=True)
+            res["바뀐장면"] = ch
+            log(f"[리허설] 지난 녹화 뒤 사이트가 바뀐 장면 {len(ch)}개: " + ", ".join(f"{c['키']}({c['이유']})" for c in ch))
     except SceneError as e:
         s = e.scene
         res = {"ok": False, "장면": s.no, "키": s.key, "대상": s.label or s.target, "말": s.line.text,
