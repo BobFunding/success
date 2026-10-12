@@ -44,10 +44,22 @@ def _use_proxy_ca() -> None:
         certifi.where = lambda: bundle
 
 
+def _use_new_edge_host() -> None:
+    """2026-10-10 부터 예전 주소(speech.platform.bing.com)는 음성 합성을 403 으로 거절한다.
+    Edge 155 가 쓰는 새 주소(api.msedgeservices.com)는 예전 토큰을 그대로 받으므로 주소만 바꾼다(edge-tts PR #491)."""
+    import edge_tts.communicate as M
+    import edge_tts.constants as C
+    new = ("wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+           f"?Ocp-Apim-Subscription-Key={C.TRUSTED_CLIENT_TOKEN}")
+    if "speech.platform.bing.com" in getattr(M, "WSS_URL", ""):
+        M.WSS_URL = C.WSS_URL = new
+
+
 def synthesize(lines: list[Line], out_dir: Path, voice: str = VOICE, base_rate: int = RATE, log=print) -> list[Line]:
     """문장별 wav(48kHz mono)를 만들고 길이를 채워 돌려준다. 앞뒤 완전 무음만 정리하고 끝음절 꼬리는 살린다."""
     _use_proxy_ca()
     import edge_tts
+    _use_new_edge_host()
 
     out_dir.mkdir(parents=True, exist_ok=True)
 
