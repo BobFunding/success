@@ -51,6 +51,12 @@ async function go(i) {
   if (S.cur === 1 && i !== 1 && S.dirty) { if (!(await saveScenario())) return; }
   S.cur = i; nav(); render(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
+function repBtn() { return ' <button class="ghost" type="button" data-report title="개인정보·비밀번호·키는 빼고 모아요">📋 오류 정보 복사</button>'; }
+async function copyReport() {
+  const r = await api("/api/report", { path: (S.proj || {}).path || "" });
+  try { await navigator.clipboard.writeText(r.text); alert("오류 정보를 복사했어요. AI 채팅이나 개발자에게 붙여 넣으세요."); }
+  catch (_) { prompt("아래 글을 복사해 주세요.", r.text); }
+}
 function foot(prev, nextLabel, nextId = "next", disabled = false) {
   return `<div class="foot">${prev ? '<button class="ghost" type="button" id="prev">← 이전</button>' : "<span></span>"}
     ${nextLabel ? `<button class="primary" type="button" id="${nextId}" ${disabled ? "disabled" : ""}>${nextLabel}</button>` : ""}</div>`;
@@ -61,15 +67,24 @@ function viewStart() {
   const j = S.job || {};
   const rec = j.kind === "demo" && j.running;
   const tip = store.get("tipDone", false) ? "" : `<div class="tip"><span>처음이세요? ① 사이트 주소 넣기 → ② [한 번 해 보이기] → ③ [다음]만 누르면 영상이 완성돼요.</span><button class="x" id="tipX" type="button">알겠어요</button></div>`;
-  const projects = (S.st.projects || []).map(p => `<div class="pitem"><span>${esc(p.title)} ${p.example ? '<span class="chip">예시 · 1편</span>' : ""}
-      <small>장면 ${p.scenes}개${p.video ? " · 영상 있음" : ""}</small></span><button class="ghost" type="button" data-open="${esc(p.path)}">열기</button></div>`).join("");
+  const projects = (S.st.projects || []).map(p => `<div class="pitem"><label style="display:flex;gap:10px;align-items:center;flex:1">
+      <input type="checkbox" data-batch="${esc(p.path)}" ${(S.batchSel || []).includes(p.path) ? "checked" : ""} aria-label="한꺼번에 만들기에 넣기">
+      <span>${esc(p.title)} ${p.example ? '<span class="chip">예시 · 1편</span>' : ""}${p.series ? ` <span class="chip">${esc(p.series)} ${esc(p.no)}편</span>` : ""}
+      <small>장면 ${p.scenes}개${p.video ? " · 영상 있음" : ""}${p.interrupted ? " · ⏸ 만들다 멈춤" : ""}</small></span></label>
+      ${p.interrupted ? `<button class="primary" type="button" data-resume="${esc(p.path)}">이어서 만들기</button>` : ""}
+      <button class="ghost" type="button" data-open="${esc(p.path)}">열기</button></div>`).join("");
+  const nb = (S.batchSel || []).length;
+  const batch = j.kind === "batch" && j.running ? batchBox(j)
+    : (j.kind === "batch" && !j.running && j.result ? `<div class="summary"><span>한꺼번에 만들기 끝 · ${j.result.batch.filter(x => x.ok).length}/${j.result.batch.length}편 완성</span>
+        <small>${j.result.batch.filter(x => !x.ok).map(x => `${esc(x.title)}: ${esc(x.error)}`).join(" · ")}</small></div>` : "")
+    + (nb ? `<div class="foot"><span class="hint">고른 ${nb}편을 순서대로 만들어요. 지난번 목소리·꾸미기 그대로, 녹화는 보이지 않는 창에서.</span><button class="primary" type="button" id="batchGo">${nb}편 한꺼번에 만들기</button></div>` : "");
   const demo = rec ? `
     <div class="browser"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>${esc(S.url)}</span>
       <span class="live"><i></i>기록 중 · 동작 ${j.count || 0}개</span></div>
       <div class="site"><div class="fake" style="width:40%"></div><div class="fake" style="width:70%"></div><div class="fake" style="width:55%"></div></div></div>
     <div class="foot"><span class="hint">따로 뜬 브라우저 창에서 평소처럼 한 번 해 보세요. 화면은 찍지 않고 동작만 기록합니다. 실수해도 괜찮아요.</span>
       <button class="primary rec" type="button" id="stop">■ 끝</button></div>`
-    : `${j.kind === "demo" && j.error ? `<div class="err">${esc(j.error)}</div>` : ""}
+    : `${j.kind === "demo" && j.error ? `<div class="err">${esc(j.error)}${repBtn()}</div>` : ""}
     <p class="lead">[한 번 해 보이기]를 누르면 브라우저 창이 따로 뜹니다. 평소처럼 한 번 하고 [■ 끝]을 누르세요. 비밀번호는 기록하지 않아요.</p>
     ${foot(false, "🖱 한 번 해 보이기", "demoGo")}`;
   return `${tip}
@@ -77,13 +92,27 @@ function viewStart() {
   <p class="lead">주소를 넣고 방법을 고르세요. 제목은 비워 두면 자동으로 제안합니다.</p>
   <div class="row"><label class="f" for="url">사이트 주소<input type="text" id="url" value="${esc(S.url)}" placeholder="https://"></label>
     <label class="f" for="ttl">영상 주제 (선택)<input type="text" id="ttl" value="${esc(S.title)}" placeholder="예: 관장님 회원가입 — 비워 두면 자동 제안"></label></div>
+  <div class="inline" style="margin-top:var(--s1)"><span class="hint">용도</span>${["고객 안내", "직원 교육", "제품 소개"].map(u => `<label class="opt"><input type="radio" name="pu" value="${u}" ${(S.purpose || "고객 안내") === u ? "checked" : ""}><span>${u}</span></label>`).join("")}
+    <span class="hint">인사말·끝인사·말투가 달라져요</span></div>
 </section>
 <section class="modes">
   <button type="button" class="mode ${S.mode !== "ai" ? "on" : ""}" id="mDemo"><b>🖱 한 번 해 보이기</b><span>내가 직접 한 번 보여 주기. AI 없이, 비용 없이</span></button>
   <button type="button" class="mode ${S.mode === "ai" ? "on" : ""}" id="mAi"><b>✨ AI에게 맡기기</b><span>한 줄로 부탁하면 AI가 사이트를 둘러보고 채움${(S.st.keys || {}).anthropic ? "" : " · 키 필요"}</span></button>
 </section>
 ${S.mode === "ai" ? aiCard() : `<section class="card"><h2>한 번 해 보이기</h2>${demo}</section>`}
-<section class="card"><h2>지난 작업</h2><p class="lead">열어서 문장 하나만 고치고 다시 만들 수 있어요.</p><div class="plist">${projects || '<p class="hint">아직 없어요.</p>'}</div></section>`;
+<section class="card"><h2>지난 작업</h2><p class="lead">열어서 문장 하나만 고치고 다시 만들 수 있어요.
+  <label class="ghost" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px;cursor:pointer">📥 공유 파일 가져오기<input type="file" id="importF" accept=".zip" hidden></label></p><div class="plist">${projects || '<p class="hint">아직 없어요.</p>'}</div>${batch}</section>`;
+}
+
+// 시리즈·공유(접어 둠): 같은 시리즈면 '다음 편 안내'가 자동으로 이어진다
+function seriesCard() {
+  const se = S.proj.series || {}, eps = se.eps || [];
+  return `<section class="card"><details><summary>시리즈 · 공유<span>${se.name ? `${esc(se.name)} ${se.no}편 · 다음 편 안내 자동` : "여러 편으로 묶기, 다른 PC 로 보내기 (선택)"}</span></summary><div style="padding:0 14px 8px">
+    <div class="row"><label class="f" for="srN">시리즈 이름<input type="text" id="srN" list="srL" value="${esc(se.name || "")}" placeholder="예: 태권월드 관장님 사용법"><datalist id="srL">${(se.names || []).map(n => `<option value="${esc(n)}">`).join("")}</datalist></label>
+      <label class="f" for="srNo">몇 편<input type="number" id="srNo" min="1" value="${esc(se.no || (eps.length + 1))}"></label></div>
+    ${eps.length ? `<div class="hint">${eps.map(e => `${e["편"]}편 ${esc(e["제목"])}`).join(" → ")}</div>` : ""}
+    <div class="foot"><button class="ghost" type="button" id="packGo" title="장면 표·브랜드·규칙·번역. 비밀번호·영상·녹음·키는 넣지 않아요">📦 공유 파일 만들기</button><button class="primary" type="button" id="srSave">시리즈 저장</button></div>
+  </div></details></section>`;
 }
 
 // 문장 다듬기(AI, 선택): 바꾼 문장만 제안 → 사람이 적용
@@ -97,6 +126,14 @@ function polishBox() {
     const sc_ = sc.find(x => x["키"] === k) || {};
     return `<div><span><s style="color:var(--muted)">${esc(sc_["말"] || "")}</s><br>${esc(sg[k])}</span><button class="ghost" type="button" data-pol="${esc(k)}">적용</button></div>`; }).join("")}</div>
     <div class="foot"><button class="ghost" type="button" id="polishNo">닫기</button><button class="primary" type="button" id="polishAll">모두 적용</button></div></div>`;
+}
+
+function batchBox(j) {
+  const b = j.batch || {};
+  const ask = j.ask ? `<div class="card" style="border-color:var(--blue);margin-top:var(--s2)"><h2>잠깐, 도와주세요</h2><p class="lead">${esc(j.ask.question)}</p>
+    ${j.ask.shot ? `<img src="${fileUrl(j.ask.shot)}&t=${j.ask.asked}" alt="지금 화면" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ""}
+    <div class="inline" style="margin-top:var(--s2)"><input type="text" id="ansV" placeholder="여기에 적어 주세요" aria-label="답"><button class="primary" type="button" id="ansGo">보내기</button></div></div>` : "";
+  return `<div class="summary" style="margin-top:var(--s2)"><span>⏳ 한꺼번에 만드는 중 ${b.i || 1}/${b.n || "?"} · ${esc(b.title || "")}</span><small>${esc(j.stage || "")}${j.eta != null ? ` · 이 편 ${mins(j.eta)} 남음` : ""}</small></div>${ask}`;
 }
 
 // AI에게 맡기기: 키가 없으면 그 자리에서 3단계 안내, 있으면 예상 비용 → 시작 → 진행·질문
@@ -117,7 +154,7 @@ function aiCard() {
     ${run ? `<div class="summary"><span>✨ AI가 사이트를 둘러보는 중</span><small>저장은 막아 두었어요. 끝나면 확인 단계로 넘어가요.</small></div>
       <div class="hint" style="margin-top:var(--s1);line-height:1.7">${log}</div>${ask}
       <div class="foot"><span></span><button class="ghost" type="button" id="aiStop">그만두기</button></div>`
-    : `${j.kind === "ai" && j.ok === false ? `<div class="err">${esc(j.error)}</div>` : ""}
+    : `${j.kind === "ai" && j.ok === false ? `<div class="err">${esc(j.error)}${repBtn()}</div>` : ""}
       <p class="lead">위 '영상 주제'에 무엇을 하는 방법인지 한 줄로 적으세요(예: 관장님이 회원가입하는 방법). AI가 보이지 않는 창에서 사이트를 한 번 해 보고 장면 표를 채워요.
         비밀번호·인증번호는 그때 물어봐요. 결제·삭제·실제 발송은 하지 않아요.</p>
       <div class="foot"><span class="hint">예상 비용 ${esc(S.st.ai_cost || "")}</span><button class="primary" type="button" id="aiGo">✨ AI에게 맡기기</button></div>`}
@@ -161,7 +198,7 @@ function viewCheck() {
   const privChips = [...priv].map(x => `<span class="chip blur">${esc(nameOfField(scenes, x))}</span>`).join("") || '<span class="hint">없음</span>';
   const warn = (p.warnings || []).map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("")
     + (((p.pronunciation || {}).items || []).filter(i => !i.ok && !(d["장면"] || []).some(s => s["키"] === i["키"])).map(i => `<div class="verdict has-warn">⚠ 발음(${esc(i["키"])}): "${esc(i["말"])}" 이 "${esc(i["들림"])}" 로 들려요. 인트로·아웃트로 문장은 브랜드 인사말에서 고칠 수 있어요.</div>`).join(""));
-  const rehBox = reh ? (reh.ok ? `<div class="summary"><span>✓ 리허설 통과 · 누를 곳 ${scenes.length}곳 모두 찾음</span></div>`
+  const rehBox = reh ? (reh.ok ? `<div class="summary"><span>✓ 리허설 통과 · 누를 곳 ${scenes.length}곳 모두 찾음</span></div>${(reh["바뀐장면"] || []).length ? `<div class="verdict has-warn">⚠ 지난 녹화 뒤 사이트가 바뀐 장면 ${reh["바뀐장면"].length}개: ${reh["바뀐장면"].map(c => `${esc(c["키"])}(${esc(c["이유"])})`).join(", ")} — 다음 만들기 때 녹화만 새로 해요(목소리·문장은 그대로).</div>` : ""}`
     : `<div class="err"><b>${reh["장면"]}번 장면에서 멈췄어요.</b><span>${esc(reh["메시지"])}</span></div>`) : "";
   const running = S.job && S.job.running && S.job.kind === "rehearse";
   return `${p.error ? `<div class="err">${esc(p.error)}</div>` : ""}
@@ -181,6 +218,7 @@ ${secretCard(p)}${doneCard(d, scenes)}
   <div class="opts"><label class="opt"><input type="radio" name="st" value="로그아웃" ${d["시작상태"] !== "로그인" ? "checked" : ""}><span>로그아웃 상태에서 (로그인도 보여 주기)</span></label>
   <label class="opt"><input type="radio" name="st" value="로그인" ${d["시작상태"] === "로그인" ? "checked" : ""}><span>로그인한 상태에서 (로그인은 녹화 안 함)</span></label></div>
   ${d["시작상태"] === "로그인" ? `<p class="hint" style="margin:8px 0 0">로그인 장면 ${(d["미리하기"] || []).length}개는 녹화 전에 프로그램이 미리 해 둬요. 영상은 ${esc(d["주소"])} 에서 시작해요.</p>` : ""}</section>
+${seriesCard()}
 <section class="card"><h2>보여 주기 장면 추가</h2><p class="lead">누르지 않고 한 곳을 밝게 보여 주며 설명하는 장면이에요. (예: "여기에 오늘 할 일이 모여 있어요.")</p>
   <div class="row3"><label class="f">몇 번 장면 뒤에<select id="shAfter">${scenes.map((x, i) => `<option value="${i}">${i + 1}번 뒤</option>`).join("")}</select></label>
   <label class="f">보여 줄 곳 (화면에 보이는 글자)<input type="text" id="shTgt" placeholder="예: 오늘 할 일"></label>
@@ -253,17 +291,42 @@ function viewChoose() {
   <div class="group"><div class="k">꾸미기</div><div><div class="opts">
     ${brand === "basic" ? "" : `<label class="opt"><input type="radio" name="dc" value="brand" ${c.deco !== "basic" ? "checked" : ""}><span>우리 브랜드 · ${esc(brandName)}</span></label>`}
     <label class="opt"><input type="radio" name="dc" value="basic" ${c.deco === "basic" || brand === "basic" ? "checked" : ""}><span>기본</span></label>
-    <label class="opt"><input type="radio" name="dc" disabled><span>＋ 참고 영상 스타일 <em class="soon">준비 중</em></span></label></div>
+    </div>
     ${brand === "basic" ? '<div class="hint" style="margin-top:6px">⚙ 설정에서 우리 브랜드(로고·색·목소리)를 만들어 두면 여기서 고를 수 있어요.</div>' : ""}</div></div></div>
+  ${styleGroup()}
   <details style="margin-top:var(--s2)"><summary>더 고르기<span>말 빠르기 · 자막 (안 건드려도 됨)</span></summary>
     <div style="padding:0 14px 8px">
       <div class="group"><div class="k">말 빠르기</div><div><input type="range" id="spd" min="-10" max="10" step="2" value="${c.speed}" aria-label="말 빠르기"><div class="scale"><span>천천히</span><span>보통</span><span>빠르게</span></div></div></div>
       <div class="group"><div class="k">자막</div><div class="opts">${radios("sb", ["켜기", "끄기"], c.subtitles ? "켜기" : "끄기")}</div></div>
+      <div class="group"><div class="k">기기</div><div><div class="opts">${[["PC", "PC 화면"], ["아이폰", "모바일 · 아이폰"], ["갤럭시", "모바일 · 갤럭시"], ["둘 다", "PC·모바일 둘 다"]].map(([v, t]) => `<label class="opt"><input type="radio" name="dv" value="${v}" ${(c.device || "PC") === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div>
+        <div class="hint" style="margin-top:6px">같은 장면 표를 휴대폰 화면 크기·터치로 찍어요(커서 대신 손가락 자리). 모바일에서 메뉴 모양이 다르면 그 장면에서 멈추고 알려 드려요.</div></div></div>
+      <div class="group"><div class="k">화질 (고급)</div><div><div class="opts">${[["1440p", "1440p · 기본"], ["4K", "4K · 오래 걸림"], ["8K", "8K · 실험용"]].map(([v, t]) => `<label class="opt"><input type="radio" name="qu" value="${v}" ${(c.quality || "1440p") === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div>
+        <div class="hint" style="margin-top:6px">4K·8K 는 늘리지 않고 화면을 더 크게 찍어요. 8K 는 시간이 매우 길고 유튜브 말고는 쓸 곳이 거의 없어요.</div></div></div>
     </div></details>
 </section>
 <div class="foot"><button class="ghost" type="button" id="prev">← 이전</button>
   <span style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="ghost" type="button" id="quick" title="저화질로 먼저 빠르게 봅니다. 녹화는 최종본에서 그대로 다시 써요.">빠른 미리보기</button>
   <button class="primary" type="button" id="next">만들기 →</button></span></div>`;
+}
+
+// 참고 영상 스타일: 편집 기법(쉼·확대·말 빠르기)만 따라 한다. 색·로고·목소리는 브랜드 그대로
+function styleGroup() {
+  const cards = S.st.styles || [], c = S.choices, j = S.job || {};
+  const run = j.kind === "style" && j.running;
+  const sel = cards.find(x => x.key === c.style);
+  const chips = `<label class="opt"><input type="radio" name="sty" value="" ${!sel ? "checked" : ""}><span>1편 기본</span></label>`
+    + cards.map(x => `<label class="opt"><input type="radio" name="sty" value="${esc(x.key)}" ${sel && sel.key === x.key ? "checked" : ""}><span>🎬 ${esc(x["이름"])}</span></label>`).join("")
+    + `<label class="opt"><input type="file" id="styF" accept="video/*" hidden ${run ? "disabled" : ""}><span>${run ? "분석 중… " + esc(j.stage || "") : "＋ 참고 영상 올리기"}</span></label>`;
+  const a = sel ? sel["적용"] : null;
+  const detail = sel ? `<details style="margin-top:6px"><summary>이 스타일로 바뀌는 것<span>${esc(sel["영상"]["크기"])} · ${esc(sel["영상"]["길이"])}초 영상에서 잼</span></summary><div class="qa" style="padding:0 14px 8px">
+      <div><span>확대</span><span class="chip ok">${a.rules["확대"] > 1 ? `${a.rules["확대"]}배 (최대 ${a.rules["최대확대"]}배)` : "확대 안 함"}</span></div>
+      ${a.rules["문장사이쉼"] != null ? `<div><span>문장 사이 쉼</span><span class="chip ok">${a.rules["문장사이쉼"]}초</span></div>` : ""}
+      <div><span>말 빠르기</span><span class="chip ok">${a.speed > 0 ? "조금 빠르게" : a.speed < 0 ? "조금 천천히" : "그대로"} (${a.speed > 0 ? "+" : ""}${a.speed}%)</span></div>
+      ${(sel["참고만"] || []).map(t => `<div><span>참고만</span><span class="chip">${esc(t)}</span></div>`).join("")}
+      ${(sel["따라할수없음"] || []).map(t => `<div><span>따라 할 수 없음</span><span class="chip blur">${esc(t)}</span></div>`).join("")}
+      <div><span></span><button class="ghost" type="button" data-stydel="${esc(sel.key)}">이 카드 지우기</button></div></div></details>` : "";
+  return `<div class="group"><div class="k">편집 스타일</div><div><div class="opts">${chips}</div>
+    <div class="hint" style="margin-top:6px">본인 영상이거나 허락받은 영상만 올려 주세요. 편집 기법만 재고, 화면·소리·글은 가져오지 않아요(원본은 분석 뒤 지움).</div>${detail}</div></div>`;
 }
 
 // 내 목소리로 녹음: 문장이 하나씩 보이고 [● 녹음] → 읽고 → [■ 멈춤]. 잡음·앞뒤 무음 정리와 음량은 만들 때 자동
@@ -314,7 +377,7 @@ function viewMake() {
     <p class="lead">${esc(j.ask.question)} — 녹화는 멈춰 있고, 기다린 시간은 영상에서 빠져요.</p>
     ${j.ask.shot ? `<img src="${fileUrl(j.ask.shot)}&t=${j.ask.asked}" alt="지금 화면" style="width:100%;border-radius:8px;border:1px solid var(--line)">` : ""}
     <div class="inline" style="margin-top:var(--s2)"><input type="text" id="ansV" placeholder="여기에 적어 주세요" aria-label="답"><button class="primary" type="button" id="ansGo">보내기</button></div></section>` : "";
-  const err = mine && j.ok === false ? `<div class="err"><b>멈췄어요.</b><span>${esc(j.error)}</span>${j.scene ? '<button class="ghost" type="button" id="fix">장면 표에서 고치기</button>' : ""}</div>` : "";
+  const err = mine && j.ok === false ? `<div class="err"><b>멈췄어요.</b><span>${esc(j.error)}</span>${j.scene ? '<button class="ghost" type="button" id="fix">장면 표에서 고치기</button>' : ""}${repBtn()}</div>` : "";
   const warn = mine && j.ok && j.result && (j.result.warnings || []).length ? j.result.warnings.map(w => `<div class="verdict has-warn">⚠ ${esc(w)}</div>`).join("") : "";
   if (pv && j.ok) return `<section class="card"><h2>빠른 미리보기</h2>
     <p class="lead">저화질 미리보기예요. 괜찮으면 최종본을 만드세요 — 이미 찍은 녹화를 그대로 써서 녹화는 다시 안 해요.</p>
@@ -335,12 +398,12 @@ function viewResult() {
   const video = r ? r.final : S.proj.video;
   const files = r ? r.files : (S.proj.files || [video]);
   const chap = r ? r.chapters : (S.proj.chapters || []);
-  const label = f => f.endsWith("_1440p60.mp4") ? ["영상 (유튜브용)", "1440p"] : f.endsWith("_1080p30.mp4") ? ["영상 사본", "1080p"]
+  const label = f => /[\\/]모바일[\\/]/.test(f) ? ["모바일 영상", "아이폰·갤럭시"] : /_(1440|2160|4320)p60\.mp4$/.test(f) ? ["영상 (유튜브용)", { "1440": "1440p", "2160": "4K", "4320": "8K" }[f.match(/_(\d+)p60/)[1]]] : f.endsWith("_1080p30.mp4") ? ["영상 사본", "1080p"]
     : f.endsWith(".srt") ? ["자막", ".srt"] : f.endsWith(".txt") ? ["유튜브 챕터", ".txt"] : [f.split(/[\\/]/).pop(), ""];
   return `<section class="card"><h2>완성됐어요</h2>
   <p class="lead">${r ? `${Math.floor(r.total / 60)}분 ${Math.round(r.total % 60)}초 · 1440p 60fps · 챕터 ${chap.length}개` : "지난번에 만든 영상"}</p>
   <div class="row3" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)">
-    <video controls preload="metadata" src="${fileUrl(video)}" poster="${fileUrl(video.replace(/_1440p60\.mp4$/, "_poster.jpg"))}"></video>
+    <video controls preload="metadata" src="${fileUrl(video)}" poster="${fileUrl(video.replace(/_(1440|2160|4320)p60\.mp4$/, "_poster.jpg"))}"></video>
     <div class="files">${files.filter(Boolean).map(f => { const [a, b] = label(f); return `<div class="file"><span>${esc(a)}</span><small>${b}</small></div>`; }).join("")}
       <button class="ghost" type="button" id="folder">📁 폴더 열기</button></div>
   </div>
@@ -400,7 +463,7 @@ function exportCard() {
     <div class="opts">${[["따라가기", "누르는 곳 따라가며 확대 (권장 · 휴대폰에서 글자가 읽혀요)"], ["전체", "가로 화면 전체를 줄여 넣기"]].map(([v, t]) => `<label class="opt"><input type="radio" name="vmode" value="${v}" ${store.get("vertical", "따라가기") === v ? "checked" : ""}><span>${t}</span></label>`).join("")}</div></details>` : ""}
   <div class="inline" style="margin-top:var(--s2)"><button class="primary" type="button" id="exportGo" ${run || !picked.length ? "disabled" : ""}>${run ? "내보내는 중…" : `내보내기 (${picked.length}곳)`}</button>
     ${run ? `<span class="hint">${esc(j.stage || "")}</span>` : rep ? `<span class="hint">${rep["판정"] === "ok" ? "✓ 규격 자동 검사 통과" : "⚠ 확인이 필요한 곳이 있어요"} · ${esc(rep["날짜"])}</span>` : ""}</div>
-  ${j && !j.running && j.ok === false ? `<div class="verdict has-warn">⚠ ${esc(j.error)}</div>` : ""}
+  ${j && !j.running && j.ok === false ? `<div class="verdict has-warn">⚠ ${esc(j.error)} ${repBtn()}</div>` : ""}
   ${res ? `<div style="margin-top:var(--s2)">${res}</div><div class="inline" style="margin-top:var(--s2)"><button class="ghost" type="button" data-expopen="${esc(rep["폴더"])}">📁 내보내기 폴더 열기</button><span class="hint">공통 폴더에 올리기 체크리스트·성과 기록 표가 있어요</span></div>` : ""}
 </section>`;
 }
@@ -411,18 +474,44 @@ function render() {
   $("#main").innerHTML = V[S.cur]();
   const on = (id, fn) => { const e = $(id); if (e) e.onclick = fn; };
   on("#prev", () => go(S.cur - 1));
+  document.querySelectorAll("[data-report]").forEach(b => b.onclick = copyReport);
   if (S.cur === 0) {
     on("#tipX", () => { store.set("tipDone", true); render(); });
     $("#url").oninput = e => S.url = e.target.value.trim();
     $("#ttl").oninput = e => S.title = e.target.value;
     on("#demoGo", async () => {
       if (!/^https?:\/\//.test(S.url)) { alert("사이트 주소를 http:// 또는 https:// 로 시작하게 적어 주세요."); return; }
-      const r = await api("/api/demo/start", { url: S.url, topic: S.title, brand: S.st.brands.includes(store.get("brand", "")) ? store.get("brand", "") : "" });
+      const r = await api("/api/demo/start", { url: S.url, topic: S.title, purpose: S.purpose || "고객 안내", brand: S.st.brands.includes(store.get("brand", "")) ? store.get("brand", "") : "" });
       if (!r.ok) { alert(r.error); return; }
       startPoll();
     });
     on("#stop", async () => { await api("/api/demo/stop", {}); });
+    const imp = $("#importF");
+    if (imp) imp.onchange = async () => {
+      const f = imp.files[0]; if (!f) return;
+      const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); });
+      const r = await api("/api/project/unpack", { data });
+      if (!r.ok) { alert(r.error); return; }
+      await loadState(); await openProject(r.path, 1);
+    };
     on("#mDemo", () => { S.mode = "demo"; render(); });
+    document.querySelectorAll("[data-batch]").forEach(c => c.onchange = () => {
+      S.batchSel = [...document.querySelectorAll("[data-batch]:checked")].map(x => x.dataset.batch); render();
+    });
+    on("#batchGo", async () => {
+      const r = await api("/api/batch", { items: S.batchSel.map(path => ({ path })) });
+      if (!r.ok) { alert(r.error); return; }
+      S.batchSel = []; startPoll();
+    });
+    document.querySelectorAll("[data-resume]").forEach(b => b.onclick = async () => {
+      const pp = (S.st.projects || []).find(x => x.path === b.dataset.resume) || {};
+      await openProject(b.dataset.resume, 3);
+      const it = pp.interrupted || {};
+      const r = await api("/api/make", { path: b.dataset.resume, choices: it.choices || S.choices, preview: !!it.preview });
+      if (!r.ok) { alert(r.error); return; }
+      startPoll(); render();
+    });
+    document.querySelectorAll("input[name=pu]").forEach(r => r.onchange = () => { S.purpose = r.value; });
     on("#mAi", () => { S.mode = "ai"; render(); });
     on("#aiKeySave", async () => {
       const v = $("#aiKey").value.trim(); if (!v) return;
@@ -433,7 +522,7 @@ function render() {
     on("#aiGo", async () => {
       if (!/^https?:\/\//.test(S.url)) { alert("사이트 주소를 http:// 또는 https:// 로 시작하게 적어 주세요."); return; }
       if (!S.title.trim()) { alert("영상 주제에 무엇을 하는 방법인지 한 줄로 적어 주세요."); $("#ttl").focus(); return; }
-      const r = await api("/api/ai/start", { url: S.url, goal: S.title, brand: S.st.brands.includes(store.get("brand", "")) ? store.get("brand", "") : "" });
+      const r = await api("/api/ai/start", { url: S.url, goal: S.title, purpose: S.purpose || "고객 안내", brand: S.st.brands.includes(store.get("brand", "")) ? store.get("brand", "") : "" });
       if (!r.ok) { if (r.need_key) { await loadState(); render(); } else alert(r.error); return; }
       startPoll();
     });
@@ -447,6 +536,18 @@ function render() {
     document.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
       const i = +b.dataset.del, sc = S.proj.scenario["장면"];
       S.removed.push({ i, s: sc.splice(i, 1)[0] }); S.dirty = true; render();
+    });
+    on("#srSave", async () => {
+      if (S.dirty && !(await saveScenario())) return;
+      const r = await api("/api/series", { path: S.proj.path, name: $("#srN").value, no: +$("#srNo").value || 1 });
+      if (!r.ok) { alert(r.error); return; }
+      S.proj.path = r.path; Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(r.path))); render();
+    });
+    on("#packGo", async () => {
+      if (S.dirty && !(await saveScenario())) return;
+      const r = await api("/api/project/pack", { path: S.proj.path });
+      if (!r.ok) { alert(r.error); return; }
+      await api("/api/open", { path: r.file }); alert("공유 파일을 만들었어요: " + r.file.split(/[\\/]/).pop());
     });
     on("#polishGo", async () => {
       if (S.dirty && !(await saveScenario())) return;
@@ -505,7 +606,22 @@ function render() {
       if (r.file) { const a = $("#aud"); a.src = fileUrl(r.file); a.play(); }
     });
     document.querySelectorAll('input[name=dc]').forEach(r => r.onchange = () => S.choices.deco = r.value);
+    document.querySelectorAll('input[name=sty]').forEach(r => r.onchange = () => { S.choices.style = r.value; render(); });
+    const sf = $("#styF");
+    if (sf) sf.onchange = async () => {
+      const f = sf.files[0]; if (!f) return;
+      const r = await fetch(`/api/style/upload?file=${encodeURIComponent(f.name)}`, { method: "POST", body: f }).then(x => x.json());
+      if (!r.ok) { alert(r.error); return; }
+      startPoll(); render();
+    };
+    document.querySelectorAll("[data-stydel]").forEach(b => b.onclick = async () => {
+      if (!confirm("이 스타일 카드를 지울까요?")) return;
+      const r = await api("/api/style/delete", { key: b.dataset.stydel });
+      S.st.styles = r.styles; S.choices.style = ""; render();
+    });
     document.querySelectorAll('input[name=sb]').forEach(r => r.onchange = () => S.choices.subtitles = r.value === "켜기");
+    document.querySelectorAll('input[name=qu]').forEach(r => r.onchange = () => S.choices.quality = r.value);
+    document.querySelectorAll('input[name=dv]').forEach(r => r.onchange = () => S.choices.device = r.value);
     $("#spd").oninput = e => S.choices.speed = +e.target.value;
     document.querySelectorAll("[data-play]").forEach(b => b.onclick = async ev => {
       ev.preventDefault(); ev.stopPropagation();
@@ -580,6 +696,13 @@ function startPoll() {
     const j = await api("/api/job");
     const was = S.job;
     S.job = j;
+    if (j.kind === "style" && !j.running && was && was.running) {
+      clearInterval(S.poll); await loadState();
+      if (j.ok) S.choices.style = j.result.key; else alert(j.error);
+      render(); return;
+    }
+    if (S.cur === 2 && j.kind === "style") render();
+    if (j.kind === "batch" && !j.running && was && was.running) { clearInterval(S.poll); await loadState(); render(); return; }
     if (j.kind === "ai" && !j.running && was && was.running) {
       clearInterval(S.poll);
       if (j.ok) { await loadState(); await openProject(j.result.path, 1); return; }
@@ -601,12 +724,26 @@ function startPoll() {
       clearInterval(S.poll);
       if (j.ok) S.proj = Object.assign(S.proj, await api("/api/project?path=" + encodeURIComponent(S.proj.path)));
     }
-    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && (j.kind === "demo" || j.kind === "ai")) || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
+    if ((S.cur === 4 && j.kind === "export") || (S.cur === 0 && (j.kind === "demo" || j.kind === "ai" || j.kind === "batch")) || (S.cur === 1 && j.kind === "rehearse") || (S.cur === 3 && j.kind === "make")) {
       const ae = document.activeElement;
       const typing = ae && (ae.isContentEditable || ae.id === "ansV" || ae.type === "password" || ae.tagName === "TEXTAREA");
       if (!typing) render();
     }
   }, 1000);
+}
+
+// 자가 점검: 이 PC에서 제대로 도는지 버튼 하나로(부품 → 짧은 영상 → 원하면 1편 재현)
+function checkPanel() {
+  const j = S.job || {}, mine = j.kind === "selfcheck";
+  const r = mine && !j.running && j.ok ? j.result : null;
+  const rows = r ? r["항목"].map(i => `<div><span>${esc(i["이름"])}</span><span class="chip ${i["판정"] === "ok" ? "ok" : "warn"}">${i["판정"] === "ok" ? "✓" : "⚠"} ${esc(i["내용"])}</span></div>`).join("") : "";
+  return `<details style="margin-top:var(--s2)" ${mine ? "open" : ""}><summary>🩺 자가 점검<span>이 PC에서 제대로 도는지 확인 (처음 설치했을 때 한 번)</span></summary><div style="padding:0 14px 8px">
+    ${mine && j.running ? `<div class="summary"><span>점검 중 · ${esc(j.stage || "")}</span><small>짧은 영상까지 3~5분, 1편 재현은 30분 이상</small></div>`
+      : `<div class="inline"><button class="primary" type="button" id="ckGo">점검하기 (약 5분)</button><button class="ghost" type="button" id="ckGo1">1편 재현까지 (30분 이상)</button></div>`}
+    ${mine && !j.running && j.ok === false ? `<div class="verdict has-warn">⚠ ${esc(j.error)}</div>` : ""}
+    ${r ? `<div class="${r["판정"] === "ok" ? "summary" : "verdict has-warn"}" style="margin-top:var(--s1)">${r["판정"] === "ok" ? "✓ 이 PC에서 잘 돌아가요" : "⚠ 확인이 필요한 곳이 있어요"} · ${esc(r["컴퓨터"])}</div>
+      <div class="qa">${rows}</div><div class="foot"><span class="hint">결과는 output/자가점검/자가점검결과.md 에도 있어요</span><button class="ghost" type="button" id="ckCopy">결과 복사</button></div>` : ""}
+  </div></details>`;
 }
 
 // 키(선택): 넣으면 그 기능만 켜진다. 값은 PC 안 보관함에만, 화면에는 다시 보이지 않음
@@ -620,6 +757,15 @@ function keysPanel() {
     ${row("anthropic", "AI 도우미 (Claude)", "https://console.anthropic.com/settings/keys", "AI에게 맡기기·문장 다듬기·번역")}
     ${row("openai", "유료 음성 (OpenAI)", "https://platform.openai.com/api-keys", "목소리 목록에 OpenAI 목소리 추가")}
     <div class="hint">키는 이 PC 의 보관함에만 저장돼요. 쓰는 만큼 제공자에게 비용이 나가요.</div></div></details>`;
+}
+
+function pollCheck() {
+  clearInterval(S.ckPoll);
+  S.ckPoll = setInterval(async () => {
+    S.job = await api("/api/job");
+    if (!$("#drawer").hidden) renderRules();
+    if (!S.job.running) clearInterval(S.ckPoll);
+  }, 1500);
 }
 
 // ── ⚙ 설정: 브랜드 · 규칙 ──
@@ -695,7 +841,8 @@ function renderRules() {
     <label class="f" for="rl5">확대 배율 (1.0~2.0)<input type="number" id="rl5" min="1" max="2" step="0.1" value="${r["확대"]}"></label>
     <div class="verdict">🔒 개인정보 흐림 · 저장·발송 차단은 항상 켜져 있어요</div>
     <div class="foot"><button class="ghost" type="button" id="resetRules">1편 기준으로 되돌리기</button><button class="primary" type="button" id="saveRules">저장</button></div>
-    ${keysPanel()}`;
+    ${keysPanel()}
+    ${checkPanel()}`;
   const collect = () => {
     const rp = {};
     document.querySelectorAll("[data-ra]").forEach(a => { const b = document.querySelector(`[data-rb="${a.dataset.ra}"]`); if (a.value.trim()) rp[a.value.trim()] = b.value.trim(); });
@@ -704,6 +851,9 @@ function renderRules() {
   $("#repAdd").onclick = () => { S.st.rules = Object.assign(collect(), {}); S.st.rules["표현바꾸기"][""] = ""; renderRules(); };
   document.querySelectorAll("[data-rx]").forEach(x => x.onclick = () => { const c = collect(); delete c["표현바꾸기"][Object.keys(c["표현바꾸기"])[+x.dataset.rx]]; S.st.rules = c; renderRules(); });
   $("#saveRules").onclick = async () => { const res = await api("/api/rules/save", { rules: collect() }); S.st.rules = res.rules; $("#drawer").hidden = true; };
+  const ck = async ep1 => { const r = await api("/api/selfcheck", { ep1 }); if (!r.ok) { alert(r.error); return; } S.job = { kind: "selfcheck", running: true }; renderRules(); pollCheck(); };
+  if ($("#ckGo")) { $("#ckGo").onclick = () => ck(false); $("#ckGo1").onclick = () => ck(true); }
+  if ($("#ckCopy")) $("#ckCopy").onclick = () => { try { navigator.clipboard.writeText(S.job.result["글"]); alert("복사했어요."); } catch (_) { prompt("복사해 주세요", S.job.result["글"]); } };
   document.querySelectorAll("[data-keysave]").forEach(b => b.onclick = async () => {
     const inp = document.querySelector(`[data-keyin="${b.dataset.keysave}"]`), v = inp.value.trim();
     if (!v) return;
@@ -727,4 +877,21 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") $("#drawer")
     startPoll();
   }
   nav(); render();
+  checkUpdate();
 })();
+
+// 새 버전 알림: 켤 때 한 번 조용히 확인 → 있으면 위에 작은 단추(누르면 내 작업은 그대로 두고 프로그램만 받음)
+async function checkUpdate() {
+  if (store.get("updSkip", "") === new Date().toDateString()) return;
+  const r = await api("/api/update/check", {});
+  if (!r.ok || !r.behind) return;
+  const b = $("#updBadge");
+  b.hidden = false;
+  b.innerHTML = `<button class="primary" type="button" id="updGo" title="내 작업(영상·장면 표·보관함·브랜드)은 그대로예요">새 버전이 있어요 · 업데이트</button> <button class="ghost" type="button" id="updLater">나중에</button>`;
+  $("#updLater").onclick = () => { store.set("updSkip", new Date().toDateString()); b.hidden = true; };
+  $("#updGo").onclick = async () => {
+    if (S.job && S.job.running) { alert("만드는 중에는 업데이트하지 않아요. 끝난 뒤에 눌러 주세요."); return; }
+    const x = await api("/api/update/apply", {});
+    alert(x.ok ? x.msg : x.error); if (x.ok) b.hidden = true;
+  };
+}

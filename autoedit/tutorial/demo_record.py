@@ -131,7 +131,7 @@ class DemoSession:
         self.page.on("framenavigated", lambda f: f == self.page.main_frame and self.navs.append((time.time() * 1000, f.url)))
         self.page.goto(url, wait_until="networkidle", timeout=60000)
 
-    def finish(self, topic: str = "", brand: str = "", tone: str = "", next_topic: str = "") -> dict:
+    def finish(self, topic: str = "", brand: str = "", tone: str = "", next_topic: str = "", purpose: str = "고객 안내") -> dict:
         try:
             self.page.wait_for_timeout(300)
         except Exception:
@@ -142,7 +142,8 @@ class DemoSession:
         except Exception:
             pass                                  # 사람이 창을 먼저 닫은 경우
         self._p.stop()
-        return build_scenario(self.url, evs, self.navs, topic=topic, brand=brand, tone=tone, next_topic=next_topic)
+        return build_scenario(self.url, evs, self.navs, topic=topic, brand=brand, tone=tone, next_topic=next_topic,
+                              purpose=purpose)
 
 
 # ── 정리 ──
@@ -300,7 +301,7 @@ def _short(s: str, n: int = 12) -> str:
 
 
 def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str = "", tone: str = "",
-                   next_topic: str = "") -> dict:
+                   next_topic: str = "", purpose: str = "고객 안내") -> dict:
     scenes = clean_events(evs, navs)
     if not scenes:
         raise ValueError("기록된 동작이 없어요. 브라우저에서 한 번 해 보신 뒤 [■ 끝]을 눌러 주세요.")
@@ -311,10 +312,11 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
     spoken = b.spoken or b.name
     if not topic:
         topic = f"{_short(scenes[-1]['heading'], 20) or host} 방법"
-    intro, outro = T.intro_outro(topic, len(step_names), spoken, next_topic)
+    purpose = purpose if purpose in T.PURPOSES else "고객 안내"
+    intro, outro = T.intro_outro(topic, len(step_names), spoken, next_topic, purpose)
     if b.greeting:
         intro[0] = b.greeting                               # 브랜드 고정 인사말
-    tone = tone or b.tone
+    tone = tone or (T.PURPOSES[purpose]["말투"] if purpose != "고객 안내" else b.tone)
     out_scenes = []
     privacy = []
     for i, s in enumerate(scenes):
@@ -353,6 +355,8 @@ def build_scenario(url: str, evs: list[dict], navs, topic: str = "", brand: str 
           "파일이름": re.sub(r"[^\w가-힣-]+", "_", f"{host.split('.')[0]}_{T.topic_words(topic)}").strip("_")}
     if next_topic:
         sc["다음편"] = next_topic
+    if purpose != "고객 안내":
+        sc["용도"] = purpose
     if privacy:
         sc["개인정보칸"] = sorted(set(privacy), key=privacy.index)
     blk = block_pages(scenes)

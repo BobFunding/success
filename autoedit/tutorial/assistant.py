@@ -161,7 +161,7 @@ def store_secrets(sc: dict, values: list[str]) -> int:
 
 
 def explore(llm, url: str, goal: str, ask=None, log=print, headless: bool = True, max_steps: int = MAX_STEPS,
-            stop=None, tone: str = "차분", brand: str = "") -> dict:
+            stop=None, tone: str = "", brand: str = "", purpose: str = "고객 안내") -> dict:
     """AI가 시연하고 {scenario: 장면 표 dict, steps, cost, date} 를 돌려준다. ask(질문, 사진경로)->답: 사람에게 묻는 함수(없으면 묻는 즉시 멈춤)."""
     from .demo_record import DemoSession
     sess = DemoSession(url, headless=headless)
@@ -248,7 +248,7 @@ def explore(llm, url: str, goal: str, ask=None, log=print, headless: bool = True
         else:
             log(f"[AI] {max_steps}번 안에 끝내지 못해 여기까지로 장면 표를 만들어요.")
         last_url = pg.url
-        sc = sess.finish(topic=goal, brand=brand, tone=tone)
+        sc = sess.finish(topic=goal, brand=brand, tone=tone, purpose=purpose)
         store_secrets(sc, secrets_given)
     except Exception:
         try:

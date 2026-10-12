@@ -13,13 +13,22 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from ..ffmpeg_utils import FFMPEG
+from ..ffmpeg_utils import FFMPEG, probe
 from ..narration import build_track
 from ..screenfx import ScreenFxSettings, _background, render
 from .scenario import Scenario, subtitle_text
 
 FONTS = Path(__file__).parent / "fonts"          # 동봉 글꼴(Pretendard, OFL) — 운영체제와 무관하게 같은 모양
 W, H, FPS = 2560, 1440, 60
+# 화질(고급): 배치·글자 크기는 1440p 기준 그대로 두고 그리는 해상도만 K 배(그림·자막은 벡터라 선명, 화면은 높은 배율로 찍음)
+QUALITY = {"1440p": 1.0, "4K": 1.5, "8K": 3.0}
+SUFFIX = {"1440p": "1440p60", "4K": "2160p60", "8K": "4320p60"}
+
+
+def main_video(work: Path, base: str = "*") -> Path | None:
+    """작업 폴더의 최종본(가장 최근에 만든 화질). 1440p·4K·8K 중 하나."""
+    vids = [f for suf in SUFFIX.values() for f in work.glob(f"{base}_{suf}.mp4")]
+    return max(vids, key=lambda f: f.stat().st_mtime) if vids else None
 GAP = 0.45                                        # 인트로·아웃트로 문장 사이
 
 
@@ -62,9 +71,13 @@ def _esc(s: str) -> str:
 
 
 class Composer:
-    def __init__(self, sc: Scenario, work: Path, log=print, rules: dict | None = None, subtitles: bool = True):
+    def __init__(self, sc: Scenario, work: Path, log=print, rules: dict | None = None, subtitles: bool = True,
+                 quality: str = "1440p"):
         from .rules import merged
         self.sc, self.work, self.say = sc, work, log
+        self.quality = quality if quality in QUALITY else "1440p"
+        self.K = QUALITY[self.quality]
+        self.RW, self.RH = int(W * self.K), int(H * self.K)          # 실제로 그리는 크기
         self.rules = rules or merged()
         self.subtitles = subtitles
         b = sc.brand
@@ -79,8 +92,8 @@ class Composer:
 
     # ── 그림 조각 ──
     def svg_layer(self, inner: str) -> np.ndarray:
-        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">{inner}</svg>'
-        png = render_svg(svg, W, H)
+        svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.RW}" height="{self.RH}" viewBox="0 0 {W} {H}">{inner}</svg>'
+        png = render_svg(svg, self.RW, self.RH)
         return cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_UNCHANGED).astype(np.float32) / 255.0
 
     def logo_layer(self, y: int, scale: float = 1.45) -> np.ndarray | None:
@@ -96,9 +109,11 @@ class Composer:
                                   f'<rect x="{x0}" y="{y}" width="{bw}" height="{bh}" rx="28" fill="#ffffff"/>'
                                   f'<text x="{W / 2}" y="{y + bh / 2 + fs * 0.36}" text-anchor="middle" font-family="{self.FONT}" '
                                   f'font-weight="900" font-size="{fs}" fill="#1B2559">{_esc(name)}</text>')
-        lg = cv2.imread(self.sc.brand.logo, cv2.IMREAD_UNCHANGED)
-        lg = cv2.resize(lg, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC).astype(np.float32) / 255.0
-        lh, lw = lg.shape[:2]
+        raw = cv2.imread(self.sc.brand.logo, cv2.IMREAD_UNCHANGED)
+        lg = cv2.resize(raw, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC).astype(np.float32) / 255.0
+        lh, lw = lg.shape[:2]                      # 배치는 1440p 기준 크기로
+        if self.K != 1:                            # 그리는 것은 K 배로(원본 로고에서 바로 키워 선명하게)
+            lg = cv2.resize(raw, None, fx=scale * self.K, fy=scale * self.K, interpolation=cv2.INTER_CUBIC).astype(np.float32) / 255.0
         pad_x, pad_y = 60, 40
         bw, bh = lw + 2 * pad_x, lh + 2 * pad_y
         x0 = (W - bw) // 2
@@ -106,8 +121,9 @@ class Composer:
                               f'<rect x="{x0}" y="{y + 10}" width="{bw}" height="{bh}" rx="28" fill="#000" opacity="0.15"/>'
                               f'<rect x="{x0}" y="{y}" width="{bw}" height="{bh}" rx="28" fill="#ffffff"/>')
         a = lg[..., 3:4]
-        ys, xs = y + pad_y, x0 + pad_x
-        card[ys:ys + lh, xs:xs + lw, :3] = card[ys:ys + lh, xs:xs + lw, :3] * (1 - a) + lg[..., :3] * a
+        ys, xs = int(round((y + pad_y) * self.K)), int(round((x0 + pad_x) * self.K))
+        gh, gw = lg.shape[:2]
+        card[ys:ys + gh, xs:xs + gw, :3] = card[ys:ys + gh, xs:xs + gw, :3] * (1 - a) + lg[..., :3] * a
         return card
 
     def step_card(self, i: int, x: int, y: int, w: int, h: int, check: bool = False) -> str:
@@ -130,12 +146,13 @@ class Composer:
     def animate(self, out: Path, dur: float, layers: list[tuple[np.ndarray, float]]):
         """layers: (RGBA 레이어, 나타나는 시각). 0.45초 동안 페이드 + 아래에서 살짝 올라옴.
         결과는 1편과 픽셀까지 같게 두고 빠르게만 했다: 레이어의 보이는 줄만 섞고, 움직임이 없는 프레임은 앞 프레임을 그대로 쓴다."""
-        bg = _background(W, H, ScreenFxSettings(background=self.BG)).astype(np.float32) / 255.0
+        RW, RH = self.RW, self.RH
+        bg = _background(RW, RH, ScreenFxSettings(background=self.BG)).astype(np.float32) / 255.0
         spans = []
         for lay, _ in layers:                      # 알파가 있는 줄 범위 (그 밖은 섞어도 그대로라 건너뜀)
             rows = np.where(lay[..., 3].max(1) > 0)[0]
             spans.append((int(rows[0]), int(rows[-1]) + 1) if len(rows) else None)
-        proc = subprocess.Popen([FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
+        proc = subprocess.Popen([FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{RW}x{RH}",
                                  "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
                                  "-pix_fmt", "yuv420p", str(out)], stdin=subprocess.PIPE)
         prev_key, prev = None, b""
@@ -151,9 +168,9 @@ class Composer:
             for (lay, _), p, sp in zip(layers, ps, spans):
                 if p <= 0 or sp is None:
                     continue
-                dy = int((1 - p) * 30)
+                dy = int((1 - p) * 30) if self.K == 1 else int((1 - p) * 30 * self.K)
                 y0, y1 = sp
-                if y0 >= dy and y1 + dy <= H:      # 위아래로 넘치지 않으면 보이는 줄만
+                if y0 >= dy and y1 + dy <= RH:      # 위아래로 넘치지 않으면 보이는 줄만
                     L = lay[y0 - dy:y1]
                     a = L[..., 3:4] * p
                     img[y0:y1 + dy] = img[y0:y1 + dy] * (1 - a) + L[..., :3] * a
@@ -210,10 +227,14 @@ class Composer:
         stage("화면 연출")
         zoom = (self.rules["확대"], self.rules["최대확대"])
         cap_key = [(work / "cap.mkv").stat().st_mtime if (work / "cap.mkv").exists() else 0, self.OFF, zoom, self.BG]
+        if self.K != 1:
+            cap_key.append(self.quality)
         body = work / ("body_preview.mp4" if preview else "body.mp4")
-        bw, bh, bfps = (960, 540, 30) if preview else (W, H, FPS)
+        bw, bh, bfps = (960, 540, 30) if preview else (self.RW, self.RH, FPS)
         if not self._fresh(body, cap_key):
-            run("-ss", f"{TRIM0:.3f}", "-to", f"{TRIM1:.3f}", "-i", str(work / "cap.mkv"),
+            ci = probe(work / "cap.mkv")
+            even = [] if ci.width % 2 == 0 and ci.height % 2 == 0 else ["-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2:0:0"]  # 모바일 화면 사진은 홀수 높이일 때가 있음
+            run("-ss", f"{TRIM0:.3f}", "-to", f"{TRIM1:.3f}", "-i", str(work / "cap.mkv"), *even,
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "8", "-pix_fmt", "yuv420p", "-an", str(work / "body_src.mp4"))
             clicks = [dict(c, t=round(tb(c["t"]), 3)) for c in self.rec["clicks"]]
             spots = [dict(s, start=tb(s["start"]), end=tb(s["end"])) for s in self.rec["spots"]]
@@ -234,6 +255,8 @@ class Composer:
         n = len(self.STEPS)
         b = sc.brand
         look = [self.BG, self.ACCENT, self.POINT, self.FONT, b.logo, b.name, b.highlight, self.STEPS]
+        if self.K != 1:
+            look.append(self.quality)
         if not self._fresh(work / "intro.mp4", look + [sc.title, DUR[I[0]], DUR[I[1]]]):
             layers = [(self.logo_layer(330), 0.15), (self.svg_layer(self.title_svg()), 0.6)]
             layers = [l for l in layers if l[0] is not None]
@@ -310,7 +333,7 @@ class Composer:
             self.say(f"[편집] 빠른 미리보기: {TOTAL:.1f}s")
             return {"intro": INTRO_LEN, "body": BODY_LEN, "outro": OUTRO_LEN, "total": TOTAL, "final": str(final),
                     "files": [str(final)], "chapters": [], "preview": True}
-        final = work / f"{base}_1440p60.mp4"
+        final = work / f"{base}_{SUFFIX[self.quality]}.mp4"
         run("-i", str(work / "intro.mp4"), "-i", str(body), "-i", str(work / "outro.mp4"),
             "-i", str(work / "narration.wav"),
             "-filter_complex", f"[0:v][1:v][2:v]concat=n=3:v=1:a=0,fps={FPS},ass=filename='{ff_path(ass_path)}':fontsdir='{ff_path(FONTS)}'[v]",

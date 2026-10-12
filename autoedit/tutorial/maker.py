@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
 
@@ -58,12 +59,46 @@ def estimate(sc: Scenario, dur: dict, stages=STAGES, reuse_rec: bool = False, pr
     return {n: v for n, v in est.items() if keep.get(n, "편집") in stages and v}
 
 
+MOVED_PX = 24     # 녹화 픽셀 기준(리허설과 녹화는 보통 5px 안에서 같음)
+
+
+def site_changes(work: Path) -> list[dict]:
+    """사이트 변경 감지: 방금 리허설에서 누른 자리와 지난 녹화에서 누른 자리를 장면마다 비교한다.
+    누른 횟수가 다르거나 MOVED_PX 넘게 옮겨졌으면 '바뀐 장면'."""
+    try:
+        a = json.loads((work / "log_dry.json").read_text(encoding="utf-8"))
+        b = json.loads((work / "log_rec.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    def per_scene(log):
+        lines = [(ln["key"], ln["t"]) for ln in log["lines"]] + [("", float("inf"))]
+        return {k: [(c["x"], c["y"]) for c in log["clicks"] if t <= c["t"] < lines[i + 1][1]] for i, (k, t) in enumerate(lines[:-1])}
+    pa, pb = per_scene(a), per_scene(b)
+    out = []
+    for k, ca in pa.items():
+        cb = pb.get(k)
+        if cb is None:
+            out.append({"키": k, "이유": "새 장면"}); continue
+        if len(ca) != len(cb):
+            out.append({"키": k, "이유": f"누르는 횟수가 달라짐({len(cb)} → {len(ca)})"}); continue
+        mv = max([max(abs(x[0] - y[0]), abs(x[1] - y[1])) for x, y in zip(ca, cb)] or [0])
+        if mv > MOVED_PX:
+            out.append({"키": k, "이유": f"누를 곳이 옮겨짐({mv:.0f}px)"})
+    return out
+
+
 def rehearse(sc: Scenario, work: Path, dur: dict, log=print) -> dict:
     """리허설(창 없이, 녹화 없이). 결과를 rehearsal.json 에 남긴다 — 화면은 이걸 읽어 그 장면 줄을 빨갛게 표시한다."""
     from .recorder import SceneError
     res = {"ok": True, "장면수": len(sc.scenes)}
     try:
         Recorder(sc, dur, log).run("dry", work)
+        ch = site_changes(work) if (work / "cap.mkv.key").exists() else []
+        if ch:                          # 지난 녹화가 지금 사이트와 다름 → 다음 만들기 때 녹화만 새로(목소리·카드는 그대로)
+            (work / "cap.mkv.key").unlink(missing_ok=True)
+            res["바뀐장면"] = ch
+            log(f"[리허설] 지난 녹화 뒤 사이트가 바뀐 장면 {len(ch)}개: " + ", ".join(f"{c['키']}({c['이유']})" for c in ch))
     except SceneError as e:
         s = e.scene
         res = {"ok": False, "장면": s.no, "키": s.key, "대상": s.label or s.target, "말": s.line.text,
@@ -74,9 +109,42 @@ def rehearse(sc: Scenario, work: Path, dur: dict, log=print) -> dict:
     return res
 
 
+CAPTURE_SCALE = {"1440p": 1.5, "4K": 2.0, "8K": 4.0}     # CSS 1920x1080 × 배율 = 찍는 크기(4K 는 3840x2160 그대로)
+
+
 def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print, rules: dict | None = None,
          on_stage=None, subtitles: bool = True, preview: bool = False, check: bool = True, ask=None,
-         allow_real: bool = False) -> dict:
+         allow_real: bool = False, quality: str = "1440p", device: str = "PC") -> dict:
+    """quality(고급): 1440p(기본·1편) / 4K / 8K(실험용, 매우 오래 걸림). 4K·8K 는 늘리지 않고 높은 배율로 찍는다(한 장씩 찍기).
+    device: PC(기본) / 아이폰 / 갤럭시 — 같은 장면 표를 모바일 화면(터치 표시)으로 찍는다(한 장씩 찍기)."""
+    from . import recorder as RC
+    quality = quality if quality in CAPTURE_SCALE else "1440p"
+    device = device if device in RC.DEVICES else "PC"
+    if quality == "1440p" and device == "PC":
+        return _make(sc, work, stages, fast, log, rules, on_stage, subtitles, preview, check, ask, allow_real, quality, device)
+    old = (RC.W, RC.H, RC.SCALE, RC.DEVICE, os.environ.get("TUTORIAL_CAPTURE"))
+    if device != "PC":
+        d = RC.DEVICES[device]
+        RC.W, RC.H = d["viewport"]
+        RC.SCALE = d["scale"] * (CAPTURE_SCALE[quality] / 1.5)
+        RC.DEVICE = device
+        log(f"[기기] {device} 화면({RC.W}×{RC.H})으로 찍어요. 커서 대신 손가락 자리가 보여요.")
+    else:
+        RC.SCALE = CAPTURE_SCALE[quality]
+        log(f"[화질] {quality}: 화면을 {RC.SCALE}배로 찍어요(오래 걸려요).")
+    os.environ["TUTORIAL_CAPTURE"] = "frames"                 # 화면보다 크거나 기기 흉내는 한 장씩 찍기로만
+    try:
+        return _make(sc, work, stages, fast, log, rules, on_stage, subtitles, preview, check, ask, allow_real, quality, device)
+    finally:
+        RC.W, RC.H, RC.SCALE, RC.DEVICE = old[:4]
+        if old[4] is None:
+            os.environ.pop("TUTORIAL_CAPTURE", None)
+        else:
+            os.environ["TUTORIAL_CAPTURE"] = old[4]
+
+
+def _make(sc: Scenario, work: Path, stages, fast, log, rules, on_stage, subtitles, preview, check, ask,
+          allow_real, quality, device="PC") -> dict:
     """on_stage(이름, 예상초표): 화면에 진행 단계를 알리는 함수. rules 가 없으면 3층 규칙을 읽어 쓴다.
     preview: 빠른 미리보기(저화질). 같은 장면 표면 녹화는 최종본에서 다시 쓴다.
     check: 발음 검사·자동 검수를 한다(1편 재현 검사처럼 영상만 필요할 때는 끔)."""
@@ -86,7 +154,8 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
     work.mkdir(parents=True, exist_ok=True)
     if sc.brand.voice == V.SILENT:
         subtitles = True                                # 목소리 없이 자막만이면 자막은 꼭 넣는다
-    rules = rules or R.merged(R.load_user(), sc.brand.rules, sc.rules)
+    # 1편 기본 ← 내 규칙 ← 참고 영상 스타일(편집 기법만) ← 브랜드 ← 장면 표. 안전 규칙은 잠금
+    rules = rules or R.merged(R.load_user(), getattr(sc, "style_rules", None), sc.brand.rules, sc.rules)
     warn = R.apply(sc, rules)
     for w in warn:
         log(f"[규칙] {w}")
@@ -94,7 +163,9 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
     stage("목소리 만들기")
     nar = narrate(sc, work, log) if "목소리" in stages else json.loads((work / "narration.json").read_text(encoding="utf-8"))
     dur = {k: v[2] for k, v in nar.items()}
-    rkey = recording_key(sc, dur)
+    rkey = recording_key(sc, dur) + (f"|{quality}" if quality != "1440p" else "") + (f"|{device}" if device != "PC" else "")
+    if device != "PC":                                  # 내보내기가 모바일 영상인지 알 수 있게
+        (work / "기기.json").write_text(json.dumps({"기기": device}, ensure_ascii=False), encoding="utf-8")
     kp = work / "cap.mkv.key"
     reuse = "녹화" in stages and (work / "cap.mkv").exists() and kp.exists() and kp.read_text(encoding="utf-8") == rkey \
         and (work / "sync.json").exists() and (work / "log_rec.json").exists()
@@ -118,7 +189,7 @@ def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print,
             kp.write_text(rkey, encoding="utf-8")
     result = {}
     if "편집" in stages:
-        result = Composer(sc, work, log, rules=rules, subtitles=subtitles).build(
+        result = Composer(sc, work, log, rules=rules, subtitles=subtitles, quality=quality).build(
             fast=fast, on_stage=lambda n: stage(n, est), preview=preview)
         result["warnings"] = warn + R.warnings(sc, rules, result["total"])
         if check and not preview:

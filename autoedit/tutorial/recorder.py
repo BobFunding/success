@@ -20,6 +20,69 @@ from .scenario import Scenario, Scene
 # 이 클라우드 환경은 미리 설치된 Chromium, 사용자 PC 는 setup 이 받은 Playwright Chromium
 CHROME = "/opt/pw-browsers/chromium" if Path("/opt/pw-browsers/chromium").exists() else None
 W, H, SCALE = 1920, 1080, 1.5          # CSS 1920x1080 × 1.5 = 화면 2880x1620 (1편)
+# 모바일 웹(9단계): 기기 흉내(화면 크기·터치·모바일 브라우저 이름). maker.make(device=...) 가 녹화 동안만 바꾼다
+DEVICE = "PC"
+DEVICES = {
+    "아이폰": {"viewport": (390, 844), "scale": 3.0, "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
+               "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"},
+    "갤럭시": {"viewport": (412, 915), "scale": 2.625, "ua": "Mozilla/5.0 (Linux; Android 14; SM-S921N) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"},
+}
+class _Timed:
+    """한 장씩 찍기에서 브라우저 동작(누르기·글자 하나·목록 고르기·기다리기)이 걸린 실제 시간을 장면 시각에 그대로 셈한다.
+    운영체제 화면 녹화(1편)에서는 이런 동작 시간이 그대로 영상 시간이지만, 한 장씩 찍기는 시각을 k로 나누므로
+    그대로 두면 동작이 k배 빨라져 영상이 짧아진다(1편: 글자 입력·목록 고르기 장면이 최대 2초 빨라짐, 2026-10-11).
+    동작이 끝나면 걸린 시간 × (k-1) 만큼 더 찍으며 기다려, 장면 시각으로 '걸린 시간'만큼 흐르게 한다."""
+
+    def __init__(self, obj, rec):
+        object.__setattr__(self, "_o", obj)
+        object.__setattr__(self, "_rec", rec)
+
+    def __getattr__(self, name):
+        v = getattr(self._o, name)
+        if not callable(v):
+            return _Timed._wrap(v, self._rec)
+        rec = self._rec
+
+        def call(*a, **kw):
+            a = tuple(x._o if isinstance(x, _Timed) else x for x in a)
+            if rec._depth or not rec.frames:
+                return _Timed._wrap(v(*a, **kw), rec)
+            rec._depth += 1
+            t = time.monotonic()
+            try:
+                r = v(*a, **kw)
+            finally:
+                rec._depth -= 1
+            el = time.monotonic() - t
+            rec.frames.hold(el * (rec.k - 1))
+            return _Timed._wrap(r, rec)
+        return call
+
+    @staticmethod
+    def _wrap(v, rec):
+        mod = type(v).__module__ or ""
+        return _Timed(v, rec) if mod.startswith("playwright.sync_api") else v
+
+    def __bool__(self):
+        return bool(self._o)
+
+    def __eq__(self, other):
+        return self._o == (other._o if isinstance(other, _Timed) else other)
+
+    __hash__ = object.__hash__
+
+
+# 모바일은 화살표 대신 손가락 자리(반투명 동그라미). 누르는 순간 진해진다
+TOUCH = """(() => { const add = () => { if (document.getElementById('__cur')) return; const c = document.createElement('div'); c.id='__cur';
+  c.style.cssText='position:fixed;left:0;top:0;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:rgba(40,40,40,.28);'
+    + 'border:2px solid rgba(255,255,255,.9);box-shadow:0 1px 4px rgba(0,0,0,.25);pointer-events:none;z-index:2147483647;transition:background .08s;'
+    + `transform:translate(${innerWidth / 2}px,${innerHeight / 2}px)`;
+  document.documentElement.appendChild(c);
+  document.addEventListener('mousemove', e => c.style.transform = `translate(${e.clientX}px,${e.clientY}px)`, true);
+  document.addEventListener('mousedown', () => c.style.background = 'rgba(40,40,40,.55)', true);
+  document.addEventListener('mouseup', () => c.style.background = 'rgba(40,40,40,.28)', true); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add(); })()"""
 
 CURSOR = """(() => { const add = () => { if (document.getElementById('__cur')) return; const c = document.createElement('div'); c.id='__cur';
   c.innerHTML = '<svg width="34" height="34" viewBox="0 0 26 26"><path d="M3 2 L3 21 L8 16 L12 24 L15 23 L11 15 L18 15 Z" fill="#111" stroke="#fff" stroke-width="1.6"/></svg>';
@@ -129,6 +192,7 @@ class Recorder:
         self.mode = "dry"
         self.k = 1.0                      # 느리게 돌리는 배수 (한 장씩 찍기)
         self.frames = None
+        self._depth = 0
 
     def block_requests(self) -> None:
         """저장·발송 요청(xhr/fetch) 차단을 켠다(안전 규칙). 차단 주소 화면에서만 막는다.
@@ -229,6 +293,17 @@ class Recorder:
             self.sleep(d)
 
     def scroll_to(self, y, sec=0.9):
+        if self.frames:
+            # 한 장씩 찍기: 브라우저 안에서 한 번에 굴리면 그동안 사진을 못 찍고(화면이 건너뜀), 창 없는 브라우저는
+            # 그리기를 쉬어 requestAnimationFrame 이 멈추기도 한다(1편 F1 에서 멈춤, 2026-10-11) → 한 걸음씩 옮기며 찍는다
+            s = self.pg.evaluate("scrollY")
+            n = max(8, int(sec * 30))
+            for i in range(1, n + 1):
+                p = i / n
+                e = 4 * p ** 3 if p < .5 else 1 - (-2 * p + 2) ** 3 / 2      # 위와 같은 부드러운 시작·끝
+                self.pg.evaluate("y => scrollTo(0, y)", s + (y - s) * e)
+                self.sleep(sec / n)
+            return
         self.pg.evaluate("""([y, ms]) => new Promise(res => { const s = scrollY, t0 = performance.now();
           const f = n => { const p = Math.min(1, (n - t0) / ms), e = p < .5 ? 4*p*p*p : 1 - Math.pow(-2*p + 2, 3) / 2;
             scrollTo(0, s + (y - s) * e); p < 1 ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); })""",
@@ -586,11 +661,17 @@ class Recorder:
                           f"--force-device-scale-factor={SCALE}", "--hide-scrollbars", "--no-first-run",
                           "--disable-infobars"])
                 br = ctx
+            elif DEVICE in DEVICES:                  # 모바일 웹: 기기 흉내(터치·모바일 화면)
+                br = p.chromium.launch(executable_path=CHROME, args=["--hide-scrollbars"])
+                ctx = br.new_context(viewport={"width": W, "height": H}, device_scale_factor=SCALE if method == "frames" else 1,
+                                     # is_mobile 은 끈다: 휴대폰용이 아닌 페이지를 브라우저가 줄여 그리면 누른 자리·밝게 하기 위치가
+                                     # 화면 사진과 어긋난다. 폭(뷰포트)·터치·모바일 브라우저 이름으로 휴대폰 화면은 그대로 나온다
+                                     is_mobile=False, has_touch=True, user_agent=DEVICES[DEVICE]["ua"])
             else:
                 br = p.chromium.launch(executable_path=CHROME, args=["--hide-scrollbars"])
                 ctx = br.new_context(viewport={"width": W, "height": H},
                                      device_scale_factor=SCALE if method == "frames" else 1)
-            ctx.add_init_script(CURSOR)
+            ctx.add_init_script(TOUCH if DEVICE in DEVICES else CURSOR)
             css = privacy_css(self.sc.privacy_fields)
             if self.sc.close_popups:
                 css = (css + "\n" + WIDGET_CSS).strip()
@@ -612,6 +693,7 @@ class Recorder:
             elif method == "frames":
                 self.frames = FrameCapture(pg, ctx, out_dir / "frames")
                 self.k = self.frames.choose_speed(self.sc.url)
+                self.pg = _Timed(pg, self)               # 이제부터 브라우저 동작 시간은 실제 그대로 장면 시각에
                 self.say(f"[녹화] 한 장씩 찍기: {self.k:g}배 느리게 (예상 {self.k * sum(self.dur.values()) / 60:.0f}분 안팎)")
                 if progress:
                     progress({"k": self.k})
