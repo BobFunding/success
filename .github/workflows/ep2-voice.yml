@@ -1,0 +1,23 @@
+name: ep2-voice
+on:
+  push:
+    branches: [ep2-voice]
+    paths: [".github/workflows/ep2-voice.yml", "tutorials/ep2_voice/make_voice_ci.py"]
+permissions:
+  contents: write
+jobs:
+  voice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install edge-tts
+      - run: python tutorials/ep2_voice/make_voice_ci.py
+      - run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add tutorials/ep2_voice/*.mp3
+          git commit -m "2편 나레이션 mp3 (현수 목소리, 임시 브랜치)"
+          git push
