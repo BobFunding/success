@@ -730,8 +730,22 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, p.read_bytes(), ctype, {"Accept-Ranges": "bytes"})
 
 
+class _Server(ThreadingHTTPServer):
+    # Windows 의 SO_REUSEADDR 는 이미 쓰는 포트에도 겹쳐 열려서, 예전 창이 요청을 가로챌 수 있다 → 끈다.
+    allow_reuse_address = os.name != "nt"
+
+
 def serve(port: int = 8770, open_browser: bool = True) -> None:
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    # Windows 는 Hyper-V·WSL 등이 포트 묶음을 예약해 두기도 하고(WinError 10013), 예전에 켠 창이 같은 포트를
+    # 쥐고 있기도 하다. 그때는 다음 빈 포트로 연다(브라우저는 실제로 연 주소로 띄운다).
+    httpd = None
+    for p in [port, *range(port + 1, port + 20), 0]:
+        try:
+            httpd = _Server(("127.0.0.1", p), Handler)
+            break
+        except OSError:
+            continue
+    port = httpd.server_address[1]
     url = f"http://127.0.0.1:{port}/"
     print(f"튜토리얼 메이커가 열렸어요: {url}\n이 검은 창은 켜 두세요. 끄면 프로그램도 꺼집니다.")
     if open_browser:
