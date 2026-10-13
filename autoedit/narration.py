@@ -21,9 +21,11 @@ VOICE = "ko-KR-HyunsuMultilingualNeural"   # 사용자가 고른 목소리 (현�
 RATE = -8                                  # 기본 속도(%) — 따라 하는 튜토리얼용으로 차분하게
 
 # 편안한 중저음(280Hz 살짝↑), 끝음절이 또렷하게(3.5kHz↑), 여린 끝을 끌어올리는 압축, 유튜브 음량(-14 LUFS)
-VOICE_CHAIN = ("highpass=f=80,equalizer=f=280:t=q:w=1.0:g=1.2,equalizer=f=3500:t=q:w=1.2:g=2,"
-               "equalizer=f=9000:t=q:w=1.5:g=1,"
-               "acompressor=threshold=-30dB:ratio=3:attack=5:release=80:makeup=2,alimiter=limit=0.9")
+# 받아 오는 목소리는 24kHz·48kbps mp3 라 높은 음역에 압축 잡음이 있다. 높은 음을 키우면 'ㅅ·ㅈ·ㅊ'에서 지지직이 커진다
+# (2026-10-13 사용자 지적) → 높은 음은 키우지 않고, 치찰음은 눌러 주고, 10kHz 위(압축 잡음 자리)는 걷어 낸다.
+VOICE_CHAIN = ("highpass=f=80,equalizer=f=280:t=q:w=1.0:g=1.2,equalizer=f=2800:t=q:w=1.4:g=0.8,"
+               "deesser=i=0.35:m=0.5:f=0.5,lowpass=f=10000:p=2,"
+               "acompressor=threshold=-30dB:ratio=2.5:attack=12:release=150:makeup=2,alimiter=limit=0.9")
 
 
 @dataclass
@@ -94,8 +96,9 @@ def synthesize(lines: list[Line], out_dir: Path, voice: str = VOICE, base_rate: 
     raws = asyncio.run(all_())
     for ln, raw in zip(lines, raws):
         wav = out_dir / f"{ln.key}.wav"
-        trim = ("silenceremove=start_periods=1:start_threshold=-65dB:start_silence=0.05,areverse,"
-                "silenceremove=start_periods=1:start_threshold=-65dB:start_silence=0.12,areverse")
+        # 앞뒤 무음을 자른 자리는 소리가 갑자기 시작·끝나서 '틱' 하고 튄다 → 앞 15ms·뒤 40ms 를 부드럽게
+        trim = ("silenceremove=start_periods=1:start_threshold=-65dB:start_silence=0.05,afade=t=in:d=0.015,areverse,"
+                "silenceremove=start_periods=1:start_threshold=-65dB:start_silence=0.12,afade=t=in:d=0.04,areverse")
         subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(raw), "-af", f"{trim},{VOICE_CHAIN}",
                         "-ar", "48000", "-ac", "1", str(wav)], check=True)
         ln.path = str(wav)
@@ -127,6 +130,23 @@ def build_track(placed: list[tuple[float, str]], total: float, out: Path, room_t
         last = "[m]"
     else:
         last = "[v]"
-    graph += f";{last}loudnorm=I=-14:TP=-1.5:LRA=7[out]"
-    subprocess.run([FFMPEG, "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", "[out]",
-                    "-ar", "48000", "-ac", "2", "-c:a", "pcm_s16le", str(out)], check=True)
+    # 음량 맞추기: 한 번에 하는 loudnorm 은 소리를 순간순간 키웠다 줄였다 해서 문장 시작에 '지직'이 생긴다.
+    # 먼저 섞은 뒤 재고(1차), 잰 값으로 전체를 한 번에 같은 비율로 맞춘다(2차).
+    mixed = out.with_suffix(".mix.wav")
+    subprocess.run([FFMPEG, "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", last,
+                    "-ar", "48000", "-ac", "1", "-c:a", "pcm_f32le", str(mixed)], check=True)
+    m = _measure(mixed)
+    gain = -14.0 - float(m["input_i"])            # 전체를 같은 비율로 올리고, 넘치는 순간만 리미터로 누른다(-1.5 dBTP)
+    ln = f"volume={gain:.2f}dB,alimiter=limit=0.84:attack=5:release=50:level=disabled"
+    subprocess.run([FFMPEG, "-v", "error", "-y", "-i", str(mixed), "-af", ln, "-ar", "48000", "-ac", "2",
+                    "-c:a", "pcm_s16le", str(out)], check=True)
+    mixed.unlink(missing_ok=True)
+
+
+def _measure(wav: Path) -> dict:
+    """loudnorm 1차 측정값(JSON)."""
+    import json
+    r = subprocess.run([FFMPEG, "-hide_banner", "-i", str(wav), "-af", "loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json",
+                        "-f", "null", "-"], capture_output=True, text=True)
+    txt = r.stderr
+    return json.loads(txt[txt.rindex("{"):txt.rindex("}") + 1])
