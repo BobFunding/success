@@ -44,33 +44,52 @@ def _use_proxy_ca() -> None:
         certifi.where = lambda: bundle
 
 
-def _use_new_edge_host() -> None:
-    """2026-10-10 부터 예전 주소(speech.platform.bing.com)는 음성 합성을 403 으로 거절한다.
-    Edge 155 가 쓰는 새 주소(api.msedgeservices.com)는 예전 토큰을 그대로 받으므로 주소만 바꾼다(edge-tts PR #491)."""
+def _edge_hosts() -> list[str]:
+    """음성 서버 주소 후보. 2026-10-10 부터 예전 주소(speech.platform.bing.com)는 지역에 따라 403 으로 거절하고,
+    Edge 155 가 쓰는 새 주소(api.msedgeservices.com)는 예전 토큰을 그대로 받는다(edge-tts PR #491).
+    새 주소 먼저, 안 되면 예전 주소로 다시 해 본다. 주소는 communicate 모듈 쪽 값을 바꿔야 적용된다."""
     import edge_tts.communicate as M
     import edge_tts.constants as C
     new = ("wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
            f"?Ocp-Apim-Subscription-Key={C.TRUSTED_CLIENT_TOKEN}")
-    if "speech.platform.bing.com" in getattr(M, "WSS_URL", ""):
-        M.WSS_URL = C.WSS_URL = new
+    legacy = f"wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken={C.TRUSTED_CLIENT_TOKEN}"
+    cur = getattr(M, "WSS_URL", legacy)
+    return list(dict.fromkeys([new, cur, legacy]))
+
+
+def _why(e: Exception) -> str:
+    """사람이 읽을 실패 이유(상태 코드 포함). 예: 'api.msedgeservices.com 403'."""
+    status = getattr(e, "status", None)
+    host = "api.msedgeservices.com" if "msedgeservices" in str(e) else "speech.platform.bing.com" if "bing.com" in str(e) else ""
+    return " ".join(x for x in [host, str(status) if status else type(e).__name__] if x)
 
 
 def synthesize(lines: list[Line], out_dir: Path, voice: str = VOICE, base_rate: int = RATE, log=print) -> list[Line]:
     """문장별 wav(48kHz mono)를 만들고 길이를 채워 돌려준다. 앞뒤 완전 무음만 정리하고 끝음절 꼬리는 살린다."""
     _use_proxy_ca()
     import edge_tts
-    _use_new_edge_host()
+    import edge_tts.communicate as M
+    hosts = _edge_hosts()
 
     out_dir.mkdir(parents=True, exist_ok=True)
-
     async def one(ln: Line):
         raw = out_dir / f"{ln.key}.raw.mp3"
-        await edge_tts.Communicate(ln.text, voice, rate=f"{base_rate + ln.rate:+d}%",
-                                   pitch=f"{ln.pitch:+d}Hz").save(str(raw))
-        return raw
+        why = []
+        for attempt in range(3):
+            for host in list(hosts):
+                M.WSS_URL = host             # 모듈 값이라 문장을 하나씩 만든다(새 주소는 한꺼번에 몰리면 429 로 거절하기도 함)
+                try:
+                    await edge_tts.Communicate(ln.text, voice, rate=f"{base_rate + ln.rate:+d}%",
+                                               pitch=f"{ln.pitch:+d}Hz").save(str(raw))
+                    hosts[:] = [host] + [h for h in hosts if h != host]   # 된 주소를 다음 문장부터 먼저
+                    return raw
+                except Exception as e:
+                    why.append(_why(e))
+            await asyncio.sleep(2 * (attempt + 1))
+        raise RuntimeError(f"목소리 서버가 거절했어요({', '.join(dict.fromkeys(why))})")
 
     async def all_():
-        return await asyncio.gather(*[one(ln) for ln in lines])
+        return [await one(ln) for ln in lines]
 
     raws = asyncio.run(all_())
     for ln, raw in zip(lines, raws):
