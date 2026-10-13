@@ -7,6 +7,8 @@ pillow
 opencv-python-headless
 resvg-py
 certifi
+# 비밀번호를 운영체제 보관함(Windows 자격 증명 관리자·Mac 키체인)에 저장
+keyring
 # 품질 검사(발음 검사·개인정보 최종 검사). 없으면 그 검사만 건너뜀. torch 는 setup 이 먼저 설치
 faster-whisper
 easyocr
