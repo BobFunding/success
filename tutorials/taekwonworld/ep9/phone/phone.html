@@ -30,6 +30,10 @@
   #s3, #s4 { background: #fff; }
   .screen.light { background: #f1f2f5; }
   .hot { position: absolute; pointer-events: none; }
+  .zoom { display: none; margin: 34px 0 6px; width: 760px; border-radius: 34px; overflow: hidden; box-shadow: 0 18px 40px rgba(20, 30, 70, .25); }
+  .zoom img { display: block; width: 100%; }
+  .side.wide { width: 760px; }
+  .side.wide .steps { display: none; }
 </style>
 </head>
 <body>
@@ -37,6 +41,7 @@
   <div class="side">
     <span class="who">학부모님 휴대폰</span>
     <h1 id="title">등원 알림이 와요</h1>
+    <div class="zoom" id="zoom"><img id="zimg" src="1_in_card.jpg" alt="알림 크게"></div>
     <ol class="steps" id="steps">
       <li><b>1</b>등원하면 등원 알림</li>
       <li><b>2</b>하원하면 하원 알림</li>
@@ -70,6 +75,11 @@ function place() {
 function show(n) {
   for (let i = 1; i <= 4; i++) document.getElementById('s' + i).classList.toggle('on', i === n);
   document.getElementById('title').textContent = titles[n - 1];
+  const z = n <= 2;                                            // 알림은 글씨가 작아 옆에 크게 보여 준다
+  document.getElementById('zoom').style.display = z ? 'block' : 'none';
+  document.querySelector('.side').classList.toggle('wide', z);
+  if (z) document.getElementById('zimg').src = n === 1 ? '1_in_card.jpg' : '2_out_card.jpg';
+  place();
   document.getElementById('screen').classList.toggle('light', n >= 3);
   [...document.getElementById('steps').children].forEach((li, i) => { li.className = i + 1 < n ? 'done' : i + 1 === n ? 'on' : ''; });
 }

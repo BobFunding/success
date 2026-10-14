@@ -258,6 +258,7 @@ class Ep9Recorder(E8.Ep8Recorder):
         if cal:
             self.spot(self.rect(cal["x"] - 6, cal["y"] - 6, cal["width"] + 12, cal["height"] + 12), self.now() - 0.2, self.now() + 1.6, 0)
         self.sleep(max(0.4, self.dur[s.key] * 0.25))
+        self.spot(self.rect(db["x"] - 4, db["y"] - 4, db["width"] + 8, db["height"] + 8), self.now(), self.now() + 1.0, 0)
         self.go_click(db, 0.6)
         pg.wait_for_function("() => document.querySelector('input[name=att_date]').value.includes('13일')", timeout=8000)
         self.sleep(1.0)
@@ -325,8 +326,8 @@ class Ep9Recorder(E8.Ep8Recorder):
         pg = self.pg
         c = self.row_cell(KID, 7)
         s0 = self.now()
-        self.spot(self.rect(c["x"] - 10, c["y"] - 10, c["width"] + 20, c["height"] + 20), s0, s0 + 1.6, 0)
         self.sleep(max(0.3, self.dur[s.key] * 0.3))
+        self.spot(self.rect(c["x"] - 10, c["y"] - 10, c["width"] + 20, c["height"] + 20), s0, self.now() + 1.0, 0)
         self.go_click(c, 0.7)
         pg.get_by_text("등원 시간", exact=True).last.wait_for(timeout=5000)
         self.sleep(0.4)
@@ -373,6 +374,7 @@ class Ep9Recorder(E8.Ep8Recorder):
         pg = self.pg
         c = self.row_cell(KID, 9)
         s0 = self.now()
+        self.spot(self.rect(c["x"] - 10, c["y"] - 10, c["width"] + 20, c["height"] + 20), s0, s0 + 1.2, 0)
         self.go_click(c, 0.8)
         pg.locator(".MuiModal-root textarea:not([aria-hidden=true])").first.wait_for(timeout=5000)
         self.sleep(0.3)
@@ -389,7 +391,7 @@ class Ep9Recorder(E8.Ep8Recorder):
             pg.wait_for_timeout(1200)
         pg.evaluate(f"show({n})")
         self.sleep(0.5)
-        h = self.box_of(pg.locator(f"#hot-{hot or n}"))
+        h = self.box_of(pg.locator("#zoom" if n <= 2 else f"#hot-{hot or n}"))   # 알림은 옆에 크게 보여 준 카드
         s0 = self.now()
         self.sleep(max(0.3, self.dur[s.key] * 0.15))
         self.glide(h["x"] + h["width"] * 0.6, h["y"] + h["height"] * 0.55, 0.8)
