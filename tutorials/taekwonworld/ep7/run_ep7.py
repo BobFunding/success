@@ -229,6 +229,12 @@ class Ep7Recorder(E3.Ep3Recorder):
     def do_M3(self, s, end): self.phone(s, end, 3)
     def do_M4(self, s, end): self.phone(s, end, 4)
 
+    def do_M5(self, s, end):                       # 완료 화면 그대로, 안내 문구만(다운로드 버튼 화면은 없음)
+        hot = self.box_of(self.pg.locator("#hot-3"))
+        s0 = self.now()
+        self.glide(hot["x"] + hot["width"] * 0.5, hot["y"] + hot["height"] + 40, 0.8)
+        self.spot(self.rect(hot["x"] - 6, hot["y"] - 6, hot["width"] + 12, hot["height"] + 12), s0, end + 0.2, 0)
+
 
 PHONE = (HERE / "phone" / "phone.html").as_uri()
 maker.Recorder = Ep7Recorder
