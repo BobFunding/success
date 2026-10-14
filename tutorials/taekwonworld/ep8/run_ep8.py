@@ -195,7 +195,9 @@ class Ep8Recorder(E3.Ep3Recorder):
         self.wait_until(end - 0.35)
         self.click()
         self.sleep(0.8)
-        self.go_click(self.box_of(pg.locator(".MuiModal-root button:text-is('취소')").first), 0.5)
+        cb = self.box_of(pg.locator(".MuiModal-root button:text-is('취소')").first)
+        self.spot(cb, self.now(), self.now() + 0.9, 8)
+        self.go_click(cb, 0.5)
         pg.locator("input[name=car_name]").wait_for(state="hidden", timeout=8000)
         if self.mode == "dry" and not any("car" in x.lower() for x in self.log.get("blocked", [])):
             raise SceneError(s, "등록", "등록 요청이 막히지 않았어요 — 확인 필요")
@@ -208,6 +210,7 @@ class Ep8Recorder(E3.Ep3Recorder):
         self.glide(rows[0]["x"] + 600, rows[0]["y"] + rows[0]["height"] / 2, 0.9)
         self.spot(body, s0, s0 + max(1.6, self.dur[s.key] * 0.5), 0)
         self.sleep(max(0.8, self.dur[s.key] * 0.45))
+        self.spot(self.rect(body["x"], rows[0]["y"] - 18, body["width"], rows[0]["height"] + 36), self.now(), self.now() + 1.0, 0)
         self.go_click(rows[0], 0.6)
         pg.get_by_text("차량 정보", exact=True).first.wait_for(timeout=10000)
         self.sleep(0.3)
@@ -215,7 +218,7 @@ class Ep8Recorder(E3.Ep3Recorder):
         if m:
             self.spot(m, self.now(), end + 0.2, 4)
 
-    def do_S3(self, s, end):                       # [저장]·[차량 삭제] 가리키기만 → 창 닫기
+    def do_S3(self, s, end):                       # [저장]·[차량 삭제] 가리키기만(창은 H0 에서 닫음)
         pg = self.pg
         save = self.box_of(pg.locator(".MuiModal-root button:text-is('저장')").first)
         dele = self.box_of(pg.locator(".MuiModal-root button:text-is('차량 삭제')").first)
@@ -225,11 +228,6 @@ class Ep8Recorder(E3.Ep3Recorder):
         self.sleep(max(0.8, self.dur[s.key] * 0.4))
         self.glide(dele["x"] + dele["width"] / 2, dele["y"] + dele["height"] / 2, 0.7)
         self.spot(dele, self.now() - 0.5, end + 0.2, 8)
-        self.wait_until(end)
-        self.glide(1730, 990, 0.6)                 # 창 바깥(어두운 곳)을 눌러 닫는다(저장 안 함, Esc 는 안 먹음)
-        self.sleep(0.1)
-        self.click()
-        pg.get_by_text("차량 정보", exact=True).first.wait_for(state="hidden", timeout=5000)
 
     def dash_box(self):
         """첫 화면 '차량 현황' 제목부터 마지막 차량 줄까지."""
@@ -240,28 +238,41 @@ class Ep8Recorder(E3.Ep3Recorder):
               const q=e.getBoundingClientRect(); if (q.x>r.x-40 && q.x<r.x+360 && q.y>r.y) bottom=Math.max(bottom, q.bottom+60); }
             return {x:r.x-14, y:r.y-12, width:340, height:bottom-r.y+16}; }""")
 
-    def do_H1(self, s, end):                       # 왼쪽 메뉴 홈 → 안내 창 '창 닫기' → 차량 현황
+    def do_H0(self, s, end):                       # 왼쪽 메뉴 홈(창 바깥이라 첫 클릭은 창 닫기) → 안내 창 '창 닫기'
         pg = self.pg
         home = self.side("홈")
         if not home:
             raise SceneError(s, "왼쪽 메뉴", "홈 메뉴를 찾지 못했어요")
-        self.go_click(home, 0.6)
+        s0 = self.now()
+        self.glide(home["x"] + 60, home["y"] + home["height"] / 2, 0.9)
+        self.spot(home, s0 + 0.5, s0 + 2.6, 4)
+        self.sleep(0.1)
+        self.click()                                # 차량 정보 창 닫힘(저장 안 함, Esc 는 안 먹음)
+        pg.get_by_text("차량 정보", exact=True).first.wait_for(state="hidden", timeout=5000)
+        self.sleep(0.4)
+        self.click()
         pg.wait_for_url("**/home", timeout=20000)
         close = pg.locator("button:text-is('창 닫기')").first
         try:
             close.wait_for(timeout=8000)
-            self.sleep(0.3)
-            self.go_click(self.box_of(close), 0.5)          # '다시보지않기'는 누르지 않는다
+            self.sleep(0.4)
+            b = self.box_of(close)
+            self.spot(b, self.now(), self.now() + 1.2, 8)
+            self.go_click(b, 0.6)                   # '다시보지않기'는 누르지 않는다
             close.wait_for(state="hidden", timeout=5000)
         except Exception:
-            pass                                            # 안내 창이 안 뜨면 그대로
+            pass                                    # 안내 창이 안 뜨면 그대로
         pg.get_by_text("차량 현황", exact=True).first.wait_for(timeout=10000)
-        self.sleep(0.4)
+
+    def do_H1(self, s, end):                       # 첫 화면 차량 현황
         b = self.dash_box()
         if not b:
             raise SceneError(s, "차량 현황", "첫 화면에서 차량 현황을 찾지 못했어요")
-        self.glide(b["x"] + b["width"] - 50, b["y"] + 80, 0.7)
-        self.spot(b, self.now() - 0.3, end + 0.2, 0)
+        s0 = self.now()
+        self.spot(b, s0, end + 0.2, 0)
+        self.glide(b["x"] + b["width"] / 2, b["y"] + b["height"] * 0.55, 0.9)
+        self.sleep(max(0.6, self.dur[s.key] * 0.35))
+        self.glide(b["x"] + b["width"] - 40, b["y"] + 100, 0.7)   # 운행 상태 표시 쪽
 
     # ── 학부모님 휴대폰(phone/phone.html) ──
     def phone(self, s, end, n, tap=False):
