@@ -387,7 +387,7 @@ class Ep9Recorder(E8.Ep8Recorder):
     def phone(self, s, end, n, hot=None, tap=False):
         pg = self.pg
         if not pg.url.startswith(PHONE):
-            pg.goto(PHONE, wait_until="load")
+            pg.goto(f"{PHONE}#{n}", wait_until="load")      # 처음부터 그 화면으로(첫 화면이 잠깐 비치지 않게)
             pg.wait_for_timeout(1200)
         pg.evaluate(f"show({n})")
         self.sleep(0.5)

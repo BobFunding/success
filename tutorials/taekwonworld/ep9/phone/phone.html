@@ -83,7 +83,7 @@ function show(n) {
   document.getElementById('screen').classList.toggle('light', n >= 3);
   [...document.getElementById('steps').children].forEach((li, i) => { li.className = i + 1 < n ? 'done' : i + 1 === n ? 'on' : ''; });
 }
-window.addEventListener('load', () => { place(); show(1); });
+window.addEventListener('load', () => { place(); show(parseInt(location.hash.slice(1)) || 1); });   // #3 처럼 주소에 적은 화면으로 바로 연다(다른 화면이 잠깐 비치지 않게)
 </script>
 </body>
 </html>
