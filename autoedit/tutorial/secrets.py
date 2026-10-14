@@ -50,7 +50,24 @@ def get(key: str) -> str | None:
                 return v
         except Exception:
             pass
-    return _file().get(key)
+    v = _file().get(key)
+    if v and kr:
+        _move_to_keyring(kr, key, v)
+    return v
+
+
+def _move_to_keyring(kr, key: str, value: str) -> None:
+    """예전에 PC 안 파일에 적어 둔 값은, 운영체제 보관함을 쓸 수 있게 되면 그리로 옮기고 파일에서 지운다."""
+    try:
+        kr.set_password(SERVICE, key, value)
+    except Exception:
+        return
+    d = _file()
+    d.pop(key, None)
+    if d:
+        STORE.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    else:
+        STORE.unlink(missing_ok=True)
 
 
 def has(key: str) -> bool:

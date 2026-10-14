@@ -72,7 +72,7 @@ def parts(log=print) -> list[dict]:
         out.append(_item("목소리(인터넷)", ln.duration > 0.5, f"현수 목소리 {ln.duration:.2f}초"))
         shutil.rmtree(d, ignore_errors=True)
     except Exception as e:
-        out.append(_item("목소리(인터넷)", False, f"만들지 못함({type(e).__name__}) — 인터넷 연결을 확인해 주세요(자막만 목소리는 인터넷 없이 됨)"))
+        out.append(_item("목소리(인터넷)", False, f"만들지 못함({str(e)[:120] or type(e).__name__}) — 인터넷 연결을 확인해 주세요(자막만 목소리는 인터넷 없이 됨)"))
     fonts = ROOT / "autoedit" / "tutorial" / "fonts"
     out.append(_item("글꼴(Pretendard)", (fonts / "Pretendard-Black.otf").exists(), "동봉 글꼴"))
     from . import secrets as SEC
