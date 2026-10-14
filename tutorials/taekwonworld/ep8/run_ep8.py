@@ -263,6 +263,10 @@ class Ep8Recorder(E3.Ep3Recorder):
         except Exception:
             pass                                    # 안내 창이 안 뜨면 그대로
         pg.get_by_text("차량 현황", exact=True).first.wait_for(timeout=10000)
+        self.sleep(0.3)
+        b = self.dash_box()                         # 다음 문장 전에 커서(=화면 줌)를 차량 현황으로 옮겨 둔다
+        if b:
+            self.glide(b["x"] + b["width"] / 2, b["y"] + b["height"] * 0.55, 0.8)
 
     def do_H1(self, s, end):                       # 첫 화면 차량 현황
         b = self.dash_box()
