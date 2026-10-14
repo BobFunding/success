@@ -207,6 +207,30 @@ class Ep7Recorder(E3.Ep3Recorder):
             raise SceneError(s, "발송", "초대 요청이 나가려 했어요 — 확인 필요")
 
 
+    # ── 학부모님 휴대폰(phone/phone.html) ──
+    def phone(self, s, end, n):
+        pg = self.pg
+        if n == 1:
+            pg.goto(PHONE, wait_until="load")
+            pg.wait_for_timeout(1200)                 # 글꼴·그림
+        pg.evaluate(f"show({n})")
+        self.sleep(0.5)
+        hot = self.box_of(pg.locator(f"#hot-{n}"))
+        s0 = self.now()
+        self.sleep(max(0.4, self.dur[s.key] * 0.2))
+        self.glide(hot["x"] + hot["width"] * 0.6, hot["y"] + hot["height"] * 0.55, 0.8)
+        if n == 2:
+            self.sleep(0.2)
+            self.click()                               # 수락 누르는 모습(그림 위라 아무 일도 없음)
+        self.spot(self.rect(hot["x"] - 6, hot["y"] - 6, hot["width"] + 12, hot["height"] + 12), s0, end + 0.2, 0)
+
+    def do_M1(self, s, end): self.phone(s, end, 1)
+    def do_M2(self, s, end): self.phone(s, end, 2)
+    def do_M3(self, s, end): self.phone(s, end, 3)
+    def do_M4(self, s, end): self.phone(s, end, 4)
+
+
+PHONE = (HERE / "phone" / "phone.html").as_uri()
 maker.Recorder = Ep7Recorder
 
 
