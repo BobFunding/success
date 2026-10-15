@@ -18,6 +18,12 @@ from ..narration import build_track
 from ..screenfx import ScreenFxSettings, _background, render
 from .scenario import Scenario, subtitle_text
 
+
+def _preset() -> str:
+    """x264 속도 설정. 기본 medium(1편 재현 기준). 마지막에 다시 압축하는 시리즈는 TUTORIAL_X264_PRESET=veryfast 로 빠르게."""
+    import os
+    return os.environ.get("TUTORIAL_X264_PRESET", "medium")
+
 FONTS = Path(__file__).parent / "fonts"          # 동봉 글꼴(Pretendard, OFL) — 운영체제와 무관하게 같은 모양
 W, H, FPS = 2560, 1440, 60
 # 화질(고급): 배치·글자 크기는 1440p 기준 그대로 두고 그리는 해상도만 K 배(그림·자막은 벡터라 선명, 화면은 높은 배율로 찍음)
@@ -153,7 +159,7 @@ class Composer:
             rows = np.where(lay[..., 3].max(1) > 0)[0]
             spans.append((int(rows[0]), int(rows[-1]) + 1) if len(rows) else None)
         proc = subprocess.Popen([FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{RW}x{RH}",
-                                 "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "16",
+                                 "-r", str(FPS), "-i", "-", "-c:v", "libx264", "-preset", _preset(), "-crf", "16",
                                  "-pix_fmt", "yuv420p", str(out)], stdin=subprocess.PIPE)
         prev_key, prev = None, b""
         for fi in range(int(dur * FPS)):
@@ -240,7 +246,7 @@ class Composer:
             clicks = [dict(c, t=round(tb(c["t"]), 3)) for c in self.rec["clicks"]]
             spots = [dict(s, start=tb(s["start"]), end=tb(s["end"])) for s in self.rec["spots"]]
             s = ScreenFxSettings(background=self.BG, zoom=zoom[0], max_zoom=zoom[1], speedup=1.0, out_size=(bw, bh),
-                                 crf=28 if preview else 16, x264_preset="veryfast" if preview else "medium", padding=0.06)
+                                 crf=28 if preview else 16, x264_preset="veryfast" if preview else _preset(), padding=0.06)
             plan = render(work / "body_src.mp4", body, s, clicks=clicks, spots=spots, out_fps=bfps)
             self.say(f"[편집] 본편 확대 {len(plan['focus'])}곳")
             self._done(body)
@@ -338,7 +344,7 @@ class Composer:
         run("-i", str(work / "intro.mp4"), "-i", str(body), "-i", str(work / "outro.mp4"),
             "-i", str(work / "narration.wav"),
             "-filter_complex", f"[0:v][1:v][2:v]concat=n=3:v=1:a=0,fps={FPS},ass=filename='{ff_path(ass_path)}':fontsdir='{ff_path(FONTS)}'[v]",
-            "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p",
+            "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-preset", _preset(), "-crf", "16", "-pix_fmt", "yuv420p",
             "-g", str(FPS * 2), "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
             "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-movflags", "+faststart", "-t", f"{TOTAL:.3f}", str(final))
         if not fast:
