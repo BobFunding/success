@@ -285,8 +285,14 @@ def load(path: str | Path) -> Scenario:
     return sc
 
 
+# 읽는 말 → 자막 표기(제품 모델명처럼 소리와 글자가 다른 것). 목소리는 왼쪽대로 읽고 자막에는 오른쪽이 나온다.
+SPOKEN_TO_TEXT = {"비씨 삼팔공 플러스": "BC380 PLUS"}
+
+
 def subtitle_text(text: str, brand: Brand) -> str:
-    """대본(읽는 이름)을 자막 표기로: '태권 월드' → '태권월드'."""
+    """대본(읽는 이름)을 자막 표기로: '태권 월드' → '태권월드', '비씨 삼팔공 플러스' → 'BC380 PLUS'."""
     if brand.spoken and brand.name and brand.spoken != brand.name:
         text = text.replace(brand.spoken, brand.name)
+    for k, v in SPOKEN_TO_TEXT.items():
+        text = text.replace(k, v)
     return text
