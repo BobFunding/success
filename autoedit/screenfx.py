@@ -152,6 +152,8 @@ def plan_focus(acts: list[FrameActivity], clicks: list[dict], W: int, H: int,
     focus: list[Focus] = []
     if clicks:
         for c in clicks:
+            if c.get("nozoom"):      # 창 닫기처럼 누른 뒤 그 자리가 비는 클릭: 줌하지 않고 전체를 보여 준다
+                continue
             t = float(c["t"])
             # 클릭 뒤 같은 영역에서 변화(입력 등)가 이어지면 그만큼 줌을 더 유지한다
             end = t + s.hold

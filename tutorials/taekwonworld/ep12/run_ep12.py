@@ -44,7 +44,15 @@ class Ep12Recorder(E10.Ep10Recorder):
         self.pg.add_init_script(BLUR12)
         super().scenario()
 
+    def nozoom(self):                              # 방금 클릭은 창을 닫는 클릭: 닫힌 뒤 빈 자리로 줌하지 않게
+        if self.log["clicks"]:
+            self.log["clicks"][-1]["nozoom"] = True
+
     # ── 1단계 ──
+    def do_P1(self, s, end):
+        super().do_P1(s, end)
+        self.nozoom()
+
     def do_P2(self, s, end):
         self.menu_go(s, end, "앱", "공지", "/app/notice/list")
         self.pg.get_by_text("공지 사용 가이드").first.wait_for(timeout=15000)
@@ -61,6 +69,7 @@ class Ep12Recorder(E10.Ep10Recorder):
         self.spot(self.rect(b["x"] - 8, b["y"] - 6, b["width"] + 16, b["height"] + 12), self.now() - 0.8, end + 0.2, 4)
         self.wait_until(end - 0.3)
         self.click()
+        self.nozoom()
         self.sleep(0.6)
         if pg.locator(".MuiModal-root").count():
             raise SceneError(s, "사용 가이드", "사용 가이드 창이 닫히지 않았어요")
@@ -137,7 +146,7 @@ class Ep12Recorder(E10.Ep10Recorder):
         if self.form().count():                    # 등록이 막혀 창이 남으면 바깥을 살짝 눌러 닫는다(창 바로 옆)
             fb = self.box_of(self.form().locator(".MuiPaper-root, [role=dialog]").first) if self.form().locator(".MuiPaper-root, [role=dialog]").count() else None
             x = (fb["x"] + fb["width"] + 60) if fb else 1700
-            self.glide(min(x, 1880), 540, 0.4); self.sleep(0.05); self.click()
+            self.glide(min(x, 1880), 540, 0.4); self.sleep(0.05); self.click(); self.nozoom()
             self.sleep(0.5)
             if self.form().count():
                 pg.keyboard.press("Escape"); self.sleep(0.4)
