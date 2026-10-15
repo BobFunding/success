@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>학부모님 휴대폰 — 청구서</title>
+<!-- 10편 녹화용: 학부모님 휴대폰(사용자가 준 캡처, 도장 이름·주소·전화 흐림).
+     1 카카오 알림톡 / 2 청구서 납부 화면 / 3 결제 확인(약관·다음) / 4 결제 수단 고르기.
+     녹화기가 phone.html#n 으로 열고 show(n) 으로 넘긴다. 밝게 할 자리는 #hot-n (그림 기준 비율). 고른 화면이 준비된 뒤에만 보인다. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #eef1f8; font-family: "Noto Sans KR", "WenQuanYi Zen Hei", sans-serif; overflow: hidden; }
+  .stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 90px; }
+  .side { width: 540px; }
+  .side .who { display: inline-block; background: #2e5cff; color: #fff; font-weight: 700; font-size: 22px; padding: 8px 18px; border-radius: 999px; }
+  .side h1 { font-size: 46px; line-height: 1.3; margin: 22px 0 18px; color: #191919; }
+  .steps { list-style: none; padding: 0; margin: 0; }
+  .steps li { font-size: 26px; color: #9aa3b5; padding: 12px 0; display: flex; gap: 14px; align-items: center; }
+  .steps li b { width: 40px; height: 40px; border-radius: 50%; background: #dfe4ef; color: #fff; display: grid; place-items: center; font-size: 20px; flex: none; }
+  .steps li.on { color: #191919; font-weight: 700; }
+  .steps li.on b { background: #2e5cff; }
+  .steps li.done { color: #4a5368; }
+  .steps li.done b { background: #36bd44; }
+  .phone { position: relative; width: 430px; height: 900px; border-radius: 58px; background: #111; padding: 16px; box-shadow: 0 30px 70px rgba(20, 30, 70, .28); }
+  .phone::before { content: ""; position: absolute; top: 26px; left: 50%; transform: translateX(-50%); width: 110px; height: 28px; background: #000; border-radius: 20px; z-index: 5; }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 44px; overflow: hidden; background: #000; }
+  .screen img { position: absolute; left: 0; top: 0; width: 100%; height: auto; opacity: 0; transition: opacity .45s ease; }
+  .screen img.on { opacity: 1; }
+  #s1 { top: 60px; }
+  #s2, #s3, #s4 { background: #fff; top: 40px; }
+  .screen.light { background: #f1f2f5; }
+  .hot { position: absolute; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage" style="visibility:hidden">
+  <div class="side">
+    <span class="who">학부모님 휴대폰</span>
+    <h1 id="title">청구서 알림톡이 와요</h1>
+        <ol class="steps" id="steps">
+      <li><b>1</b>카카오톡 알림톡이 와요</li>
+      <li><b>2</b>청구서 확인 → 항목·금액 보기</li>
+      <li><b>3</b>결제하기 → 확인 후 다음</li>
+      <li><b>4</b>결제 수단 고르기</li>
+    </ol>
+  </div>
+  <div class="phone"><div class="screen" id="screen">
+    <img id="s1" src="1_kakao.jpg" alt="알림톡">
+    <img id="s2" src="2_bill.jpg" alt="청구서">
+    <img id="s3" src="3_pay.jpg" alt="결제 확인">
+    <img id="s4" src="4_method.jpg" alt="결제 수단">
+    <div class="hot" id="hot-1"></div><div class="hot" id="hot-2"></div><div class="hot" id="hot-3"></div><div class="hot" id="hot-4"></div>
+  </div></div>
+</div>
+<script>
+// 다 불러와 첫 화면을 고른 뒤에 보이게 한다(기본 제목·검은 화면이 잠깐 비치지 않게)
+const titles = ["청구서 알림톡이 와요", "청구서를 확인해요", "결제 내용 확인", "결제 수단 고르기"];
+// 그림 기준 비율(가로는 화면 너비, 세로는 그림 높이 — 그림은 화면 너비에 맞춰 위에서부터 놓임)
+// 1·2 알림 카드 / 3 출결 칸 / 4 달력 14일 칸 / 5 그날 출결 정보
+const hots = { 1: [0.12, 0.055, 0.69, 0.80, 60], 2: [0.04, 0.435, 0.92, 0.32, 40], 3: [0.04, 0.90, 0.92, 0.075, 40],
+               4: [0.04, 0.215, 0.92, 0.49, 40] };
+const ratio = { 1: 1352 / 1080, 2: 1892 / 1080, 3: 1902 / 1080, 4: 1900 / 1080 };
+function place() {
+  const sc = document.getElementById('screen').getBoundingClientRect();
+  for (const [k, [x, y, w, h, top]] of Object.entries(hots)) {
+    const ih = sc.width * ratio[k];
+    Object.assign(document.getElementById('hot-' + k).style, { left: (x * sc.width) + 'px', top: (top + y * ih) + 'px',
+      width: (w * sc.width) + 'px', height: (h * ih) + 'px' });
+  }
+}
+function show(n) {
+  for (let i = 1; i <= 4; i++) document.getElementById('s' + i).classList.toggle('on', i === n);
+  document.getElementById('title').textContent = titles[n - 1];
+  document.getElementById('screen').classList.toggle('light', n >= 2);
+  [...document.getElementById('steps').children].forEach((li, i) => { li.className = i + 1 < n ? 'done' : i + 1 === n ? 'on' : ''; });
+}
+window.addEventListener('load', () => { place(); show(parseInt(location.hash.slice(1)) || 1); document.getElementById('stage').style.visibility = 'visible'; });   // #3 처럼 주소에 적은 화면으로 바로 연다(다른 화면이 잠깐 비치지 않게)
+</script>
+</body>
+</html>
