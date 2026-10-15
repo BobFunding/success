@@ -180,6 +180,18 @@ class Ep16Recorder(E15.Ep15Recorder):
     # ── 3단계: 결과 보기 ──
     def do_Q1(self, s, end):
         self.menu_go(s, end, "체력평가", "조회", "/fitness/list")
+        pg = self.pg
+        for _ in range(3):                         # 가끔 '데이터 요청에 실패' → 재시도
+            try:
+                pg.locator(".MuiSelect-select").filter(has_text="10월").first.wait_for(timeout=4000)
+                break
+            except Exception:
+                r = pg.get_by_role("button", name="재시도")
+                if r.count():
+                    r.first.click()
+                else:
+                    pg.reload()
+                self.sleep(1.5)
         self.sleep(0.4)
 
     def do_Q2(self, s, end):                       # 10월 → 9월(키보드, 고르면 바로 조회) → 결과 표
