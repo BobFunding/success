@@ -2,7 +2,8 @@
 사용:
   python postfix.py scan <영상.mp4>                         # 0.3초 넘는 빈 화면 후보 출력(0.1초 단위)
   python postfix.py fix <영상.mp4> <자막.srt> <출력.mp4> <규칙.json>
-규칙.json: {"freeze": [[시작, 끝, 채울그림시각], ...], "cut": [[시작, 끝], ...]}   (모두 원본 영상 시각, 초)
+규칙.json: {"freeze": [[시작, 끝, 채울그림시각(, 그림파일)], ...], "cut": [[시작, 끝], ...]}   (모두 원본 영상 시각, 초)
+- 그림파일을 주면 그 그림으로 덮는다(예: 흐림을 더한 장면 사진). 크기는 영상과 같아야 한다.
 - freeze: 그 구간을 '채울그림시각'의 화면으로 덮는다. 자막 띠(아래 140px)는 덮지 않아 자막이 목소리와 어긋나지 않는다.
 - cut: 영상·소리를 함께 잘라 낸다(목소리 없는 로딩 구간만). 자막 SRT 시각도 그만큼 당긴다(출력.srt).
 - 후보는 사람이(프레임을 보고) 고른다: 줌으로 빈 칸이 커 보이는 정상 화면도 후보에 걸리기 때문.
@@ -49,13 +50,17 @@ def fix(video: str, srt: str, out: str, rules: dict) -> None:
     freeze, cuts = rules.get("freeze", []), sorted(rules.get("cut", []))
     work = Path(out).with_suffix("")
     args = ["ffmpeg", "-v", "error", "-y", "-i", video]
-    for i, (a, b, t) in enumerate(freeze):
+    for i, (a, b, t, *img) in enumerate(freeze):
         png = f"{work}_still{i}.png"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", video, "-frames:v", "1", png], check=True)
-        im = Image.open(png); im.crop((0, 0, im.width, im.height - KEEP_BOTTOM)).save(png)
+        if img:
+            im = Image.open(img[0]).convert("RGB")
+        else:
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", str(t), "-i", video, "-frames:v", "1", png], check=True)
+            im = Image.open(png)
+        im.crop((0, 0, im.width, im.height - KEEP_BOTTOM)).save(png)
         args += ["-i", png]
     fc, cur = [], "[0:v]"
-    for i, (a, b, t) in enumerate(freeze):
+    for i, (a, b, t, *_) in enumerate(freeze):
         fc.append(f"{cur}[{i + 1}:v]overlay=0:0:enable='between(t,{a},{b})'[v{i}]"); cur = f"[v{i}]"
     keep, s = [], 0.0
     for a, b in cuts:

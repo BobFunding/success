@@ -30,7 +30,7 @@ BLUR15 = r"""(() => {
     for (const e of document.querySelectorAll('div, span, p, td, h1, h2, h3, h4, h5, h6')) {
       if (e.childElementCount || e.classList.contains('__tm_blur')) continue;
       const t = (e.innerText || '').trim();
-      if (/^[가-힣]( [가-힣]){1,3}$/.test(t) && e.closest('.MuiModal-root')) { e.classList.add('__tm_blur'); continue; }
+      if (e.closest('.MuiModal-root') && (/^[가-힣]( [가-힣]){1,3}$/.test(t) || /\d{4}년 ?\d{1,2}월 ?\d{1,2}일/.test(t) || /^KR ?\d+/.test(t))) { e.classList.add('__tm_blur'); continue; }   // 승급증 속 이름·생년월일·승급번호
       if (!/^[가-힣]{2,4}$/.test(t) || skip.test(t)) continue;
       if (e.getBoundingClientRect().x < 240) continue;
       for (let p = e.parentElement, i = 0; p && i < 6; p = p.parentElement, i++)
