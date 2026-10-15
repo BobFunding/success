@@ -226,7 +226,8 @@ class Composer:
         # 1) 본편: 녹화본 자르기 → screenfx
         stage("화면 연출")
         zoom = (self.rules["확대"], self.rules["최대확대"])
-        cap_key = [(work / "cap.mkv").stat().st_mtime if (work / "cap.mkv").exists() else 0, self.OFF, zoom, self.BG]
+        cap_key = [(work / "cap.mkv").stat().st_mtime if (work / "cap.mkv").exists() else 0, self.OFF, zoom, self.BG,
+                   self.rec["clicks"], self.rec["spots"]]      # 클릭·밝게 기록을 고치면(예: nozoom) 다시 만든다
         if self.K != 1:
             cap_key.append(self.quality)
         body = work / ("body_preview.mp4" if preview else "body.mp4")
