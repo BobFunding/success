@@ -79,9 +79,10 @@ class Ep13Recorder(E12.Ep12Recorder):
     def do_W2(self, s, end):                       # 수련생 선택 → 고르는 창
         pg = self.pg
         b = self.box_of(self.modal("알림장 작성").locator("button").filter(has_text="수련생 선택").first)
-        self.spot(b, self.now(), end + 0.2, 8)
+        s0 = self.now()
         self.sleep(max(0.4, self.dur[s.key] * 0.45))
         self.go_click(b, 0.7)
+        self.spot(b, s0, self.now() + 0.2, 8)          # 누르면 창이 바뀌므로 밝게는 누를 때까지만
         self.modal("수련생 선택").locator("input[type=checkbox]").nth(1).wait_for(timeout=8000)
         self.sleep(0.4)
 
@@ -103,9 +104,10 @@ class Ep13Recorder(E12.Ep12Recorder):
     def do_W4(self, s, end):                       # 선택
         pg = self.pg
         b = self.box_of(self.modal("수련생 선택").get_by_text("선택", exact=True).first)
-        self.spot(b, self.now(), end + 0.2, 8)
+        s0 = self.now()
         self.sleep(max(0.4, self.dur[s.key] * 0.4))
         self.go_click(b, 0.7)
+        self.spot(b, s0, self.now() + 0.2, 8)
         pg.get_by_text("선택 초기화").first.wait_for(timeout=8000)
         self.sleep(0.4)
 
