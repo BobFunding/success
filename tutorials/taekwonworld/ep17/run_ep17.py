@@ -4,7 +4,10 @@
 - 1단계 안내 화면(phone/info.html): 헬스케어는 셀바스 아큐닉 BC380 PLUS 를 구매해야 연동된다(사용자 요청).
 - 읽기만 한다. 아큐닉 대시보드(바깥 사이트)는 가리키기만 하고 열지 않는다.
 """
+import datetime as dt
+import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -20,6 +23,26 @@ E12.PHONE = (HERE / "phone" / "phone.html").as_uri()          # 12편 phone() �
 INFO = (HERE / "phone" / "info.html").as_uri()
 DOJANG = "헬스케어 테스트"
 HOME = "https://taekwonworld.net/home"
+# 측정 기록 날짜(2024년)를 오늘(2026-10-15) 기준으로 옮겨 보여 준다(녹화 브라우저 안에서만, 서버는 그대로).
+# 앱 캡처와 같은 기준: 가장 최근 기록 2024-11-22 → 2026-10-15, 오늘보다 뒤로 가는 날짜는 오늘로.
+TODAY = dt.date(2026, 10, 15)
+SHIFT = TODAY - dt.date(2024, 11, 22)
+
+
+def _move(y, m, d):
+    try:
+        return min(dt.date(int(y), int(m), int(d)) + SHIFT, TODAY)
+    except ValueError:
+        return None
+
+
+def redate(text: str) -> str:
+    def dash(mt):
+        n = _move(*mt.groups()); return n.isoformat() if n else mt.group(0)
+    def plain(mt):
+        n = _move(*mt.groups()); return n.strftime("%Y%m%d") if n else mt.group(0)
+    text = re.sub(r"(2024)-(\d{2})-(\d{2})", dash, text)
+    return re.sub(r"(?<!\d)(2024)(\d{2})(\d{2})(?!\d)", plain, text)
 
 # 헬스케어 테스트 도장: 도장 이름·로고, 사진 옆 수련생 이름 흐림
 BLUR17 = r"""(() => {
@@ -66,6 +89,29 @@ class Ep17Recorder(E16.Ep16Recorder):
         pg.wait_for_url("**/home", timeout=30000)
         self.scene = None
 
+    def block_requests(self) -> None:
+        """쓰기 요청은 막고(요청차단), 헬스케어 목록 읽기 응답의 날짜는 2026 기준으로 옮긴다."""
+        if self.blocking:
+            return
+        pg = self.pg
+
+        def guard(r):
+            q = r.request
+            api = "taekwonworld" in q.url and q.resource_type in ("xhr", "fetch")
+            if api and "/hc/select-body/" in q.url:
+                res = r.fetch()
+                r.fulfill(response=res, body=redate(res.text()), content_type="application/json")
+                self.log.setdefault("faked", []).append("hc/select-body 날짜")
+                return
+            write = q.method not in ("GET", "HEAD", "OPTIONS")
+            if api and write and self.blocked(pg.url or "") and "read" not in q.url.lower():
+                self.log.setdefault("blocked", []).append(f"{q.method} {q.url[:80]}")
+                r.abort()
+                return
+            r.continue_()
+        pg.route("**/*", guard)
+        self.blocking = True
+
     def card(self, s, end, hot, first=False):
         pg = self.pg
         if not pg.url.startswith(INFO):
@@ -106,7 +152,7 @@ class Ep17Recorder(E16.Ep16Recorder):
     def do_K1(self, s, end):                       # 목록 → 반·이름 찾기
         pg = self.pg
         head = self.leaf("측정일시")
-        rows = self.box_of(pg.locator("text=2024-11-22").last)
+        rows = self.box_of(pg.locator("text=2026-10-15").last)       # 날짜를 옮겨 보여 주므로 2026 기준
         if head:
             self.spot(self.rect(262, head["y"] - 22, 1630, rows["y"] + rows["height"] + 26 - (head["y"] - 22)),
                       self.now(), self.now() + max(1.8, self.dur[s.key] * 0.5), 0)
@@ -147,7 +193,18 @@ class Ep17Recorder(E16.Ep16Recorder):
         self.wait_until(end - 0.1)
 
     def do_M1(self, s, end): self.phone(s, end, 1, tap=True)
-    def do_M2(self, s, end): self.phone(s, end, 2)
+
+    def do_M2(self, s, end):                       # 헬스케어 메뉴: 두 가지 → 키(신장) 기록 누르기
+        self.phone(s, end, 2)
+        h = self.box_of(self.pg.locator("#hot-2"))
+        self.wait_until(end - 1.0)
+        self.glide(h["x"] + h["width"] * 0.6, h["y"] + h["height"] * 0.22, 0.6)
+        self.sleep(0.15)
+        self.click()
+
+    def do_M3(self, s, end): self.phone(s, end, 3)
+    def do_M4(self, s, end): self.phone(s, end, 4)
+    def do_M5(self, s, end): self.phone(s, end, 5)
 
 
 maker.Recorder = Ep17Recorder
