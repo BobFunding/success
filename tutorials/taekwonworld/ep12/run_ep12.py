@@ -179,9 +179,8 @@ class Ep12Recorder(E10.Ep10Recorder):
         self.spot(area, self.now() - 0.3, end + 0.2, 0)
 
     def dots_box(self):
-        return self.pg.evaluate("""() => { const m=[...document.querySelectorAll('.MuiModal-root')].pop(); if (!m) return null;
-            const bs=[...m.querySelectorAll('button')].map(b=>b.getBoundingClientRect()).filter(r=>r.width>0 && r.width<60);
-            if (!bs.length) return null; bs.sort((a,b)=>(a.y-b.y)||(b.x-a.x)); const r=bs[0]; return {x:r.x,y:r.y,width:r.width,height:r.height}; }""")
+        loc = self.pg.locator(".MuiModal-root button").filter(has=self.pg.locator("svg[data-testid=MoreVertRoundedIcon]")).last
+        return loc.bounding_box() if loc.count() else None
 
     def do_V3(self, s, end):                       # 점 세 개 → 삭제(가리키기만) → 메뉴 닫기
         pg = self.pg
@@ -192,7 +191,7 @@ class Ep12Recorder(E10.Ep10Recorder):
         self.spot(d, s0, s0 + 1.6, 10)
         self.go_click(d, 0.8)
         self.sleep(0.5)
-        dl = pg.locator("li, [role=menuitem], button").filter(has_text="삭제").last
+        dl = pg.locator(".MuiPopover-paper").get_by_text("삭제", exact=True).first
         if dl.count():
             db = self.box_of(dl)
             self.glide(db["x"] + db["width"] / 2, db["y"] + db["height"] / 2, 0.6)        # 가리키기만
