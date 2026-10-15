@@ -508,10 +508,36 @@ def _compose(frame, cx, cy, z, t, SW, SH, cw, ch, ox, oy, base, mask, click_ts, 
             view = cv2.addWeighted(ov, 0.75 * (1 - p), view, 1 - 0.75 * (1 - p), 0)
     if vfrac != (1.0, 1.0):                       # 채우기: 배경·창 없이 그대로
         return view
-    canvas = base.copy()
-    region = canvas[oy:oy + ch, ox:ox + cw]
-    canvas[oy:oy + ch, ox:ox + cw] = region * (1 - mask) + view.astype(np.float32) * mask
-    return canvas.astype(np.uint8)
+    # 창 안쪽은 마스크가 1 이라 그대로 복사하고, 둥근 모서리 네 곳만 섞는다(전체를 실수로 섞을 때와 같은 결과, 몇 배 빠름)
+    base_u8, corners = _canvas_parts(base, mask)
+    canvas = base_u8.copy()
+    canvas[oy:oy + ch, ox:ox + cw] = view
+    for ys, xs in corners:
+        m = mask[ys, xs]
+        canvas[oy + ys.start:oy + ys.stop, ox + xs.start:ox + xs.stop] = \
+            (base[oy + ys.start:oy + ys.stop, ox + xs.start:ox + xs.stop] * (1 - m) + view[ys, xs].astype(np.float32) * m).astype(np.uint8)
+    return canvas
+
+
+_PARTS: dict = {}
+
+
+def _canvas_parts(base, mask):
+    """배경(정수)과 마스크가 1 이 아닌 모서리 상자 네 개. 같은 배경·마스크면 한 번만 계산."""
+    key = (id(base), id(mask))
+    if key not in _PARTS:
+        part = mask[..., 0] < 1.0
+        h, w = part.shape
+        corners = []
+        for ys, xs in ((slice(0, h // 2), slice(0, w // 2)), (slice(0, h // 2), slice(w // 2, w)),
+                       (slice(h // 2, h), slice(0, w // 2)), (slice(h // 2, h), slice(w // 2, w))):
+            yy, xx = np.where(part[ys, xs])
+            if len(yy):
+                corners.append((slice(ys.start + yy.min(), ys.start + yy.max() + 1),
+                                slice(xs.start + xx.min(), xs.start + xx.max() + 1)))
+        _PARTS.clear()
+        _PARTS[key] = (base.astype(np.uint8), corners, base, mask)   # base·mask 를 붙잡아 id 가 재사용되지 않게
+    return _PARTS[key][:2]
 
 
 def main() -> None:
