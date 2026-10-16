@@ -1,0 +1,120 @@
+<title>태권월드 영상 배치 안내</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* 화면 사진 위에 새로 넣을 자리를 빨간 점선(승급증 도장색)으로 표시. 위→아래: 요약 → 관장님 화면 → 공개 페이지 → 전체 표 → 순서 */
+:root{
+  --bg:#f4f5fa; --panel:#ffffff; --ink:#18203d; --muted:#5a6283; --line:#dde1ee;
+  --accent:#2c3fa6; --accent-soft:#e8ebfb; --mark:#d42b2b; --mark-soft:rgba(212,43,43,.10); --mark-ink:#ffffff;
+  --f:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11152a; --panel:#1a1f38; --ink:#e7e9f6; --muted:#a3a9c8; --line:#2c3355; --accent:#8fa0ff; --accent-soft:#25306a;
+  --mark:#ff6464; --mark-soft:rgba(255,100,100,.14); --mark-ink:#2a0606; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11152a; --panel:#1a1f38; --ink:#e7e9f6; --muted:#a3a9c8; --line:#2c3355; --accent:#8fa0ff; --accent-soft:#25306a;
+  --mark:#ff6464; --mark-soft:rgba(255,100,100,.14); --mark-ink:#2a0606; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);font-size:16px;line-height:1.7}
+.wrap{max-width:960px;margin:0 auto;padding-block:32px 72px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:44px}
+h1{font-size:30px;line-height:1.3;margin:0;text-wrap:balance}
+h2{font-size:22px;line-height:1.35;margin:0;text-wrap:balance}
+h3{font-size:17px;margin:0}
+p{margin:0;max-width:65ch}
+.muted{color:var(--muted)}
+.lead{display:grid;gap:14px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:grid;gap:6px;min-width:0}
+.box b.k{font-size:13px;color:var(--accent);letter-spacing:.03em}
+.legend{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);flex-wrap:wrap}
+.legend i{display:inline-block;width:26px;height:16px;border:2px dashed var(--mark);border-radius:4px;background:var(--mark-soft)}
+section{display:grid;gap:18px}
+.sec-title{display:grid;gap:4px;border-bottom:2px solid var(--ink);padding-bottom:8px}
+.sec-title .muted{font-size:14px}
+figure{margin:0;display:grid;gap:8px}
+.shot{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff}
+.shot img{display:block;width:100%;height:auto}
+figcaption{font-size:14px;color:var(--muted)}
+.mk{position:absolute;pointer-events:none}
+.mk span{display:inline-block;white-space:nowrap}
+.mk.btn span,.mk.tag span{background:var(--mark);color:#fff;font-weight:700;border-radius:999px;padding:.25em .8em;font-size:clamp(9px,1.45vw,14px);box-shadow:0 0 0 3px var(--mark-soft),0 2px 8px rgba(0,0,0,.25)}
+.mk.bracket{border:3px dashed var(--mark);border-radius:10px;background:var(--mark-soft);display:grid;place-items:center;text-align:center}
+.mk.bracket span{white-space:normal;background:var(--mark);color:#fff;font-weight:700;border-radius:8px;padding:.3em .6em;font-size:clamp(9px,1.5vw,14px);line-height:1.4}
+.mk.video{border:3px dashed var(--mark);border-radius:10px;background:rgba(20,24,46,.82);display:grid;place-items:center;text-align:center}
+.mk.video span{white-space:normal;color:#fff;font-weight:700;font-size:clamp(10px,1.8vw,18px);line-height:1.5}
+.mk.video span::before{content:"▶";display:block;font-size:2em;line-height:1.2}
+.mk.video small{font-weight:400;font-size:.75em;opacity:.9}
+.why{display:grid;gap:4px;background:var(--accent-soft);border-radius:10px;padding:12px 16px;font-size:15px}
+.mock{border:3px dashed var(--mark);border-radius:12px;background:var(--panel);padding:18px;display:grid;gap:12px}
+.mock h3{font-size:18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.card{border:1px solid var(--line);border-radius:10px;overflow:hidden;display:grid}
+.card .th{aspect-ratio:16/9;max-width:100%;background:linear-gradient(135deg,#25349a,#4458d8);color:#fff;display:grid;place-items:center;font-weight:700;font-size:15px;text-align:center;padding:8px}
+.card .th::before{content:"▶ ";}
+.card .t{padding:8px 10px;font-size:14px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+th,td{padding:8px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--accent-soft);color:var(--accent);white-space:nowrap;width:1%}
+td.ep{font-weight:700;white-space:nowrap}
+td.nt{color:var(--muted)}
+ol.order{margin:0;padding:0;list-style:none;display:grid;gap:10px}
+ol.order li{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
+ol.order .when{font-size:13px;font-weight:700;color:#fff;background:var(--accent);border-radius:6px;padding:2px 8px;white-space:nowrap}
+ol.order .when.now{background:var(--mark)}
+@media (max-width:520px){h1{font-size:24px}h2{font-size:19px}}
+</style>
+<div class="wrap">
+  <header class="lead">
+    <h1>태권월드 영상 배치 안내</h1>
+    <p>사용법 영상 28편을 <b>어디에, 어떻게</b> 붙이면 좋은지 실제 화면 위에 표시했어요. 개발자에게 이 페이지를 그대로 보여 줘도 돼요.</p>
+    <div class="two">
+      <div class="box"><b class="k">① 관장님이 일하는 화면 안</b><p>막혔을 때 그 자리에서 바로 보라고. 진열대마다 붙인 '사용법 QR' 같은 역할이에요.</p></div>
+      <div class="box"><b class="k">② 누구나 들어오는 홈페이지</b><p>구글·네이버·ChatGPT가 찾아가라고. 매장 바깥 간판 같은 역할이에요. 로그인 안쪽은 검색로봇이 못 들어와서 이것도 꼭 필요해요.</p></div>
+    </div>
+    <div class="legend"><i></i>빨간 점선과 빨간 버튼이 새로 넣을 자리예요. 나머지는 지금 실제 화면이에요(이름·연락처는 흐림 처리).</div>
+  </header>
+
+  <section>
+    <div class="sec-title"><h2>① 관장님 화면: 버튼 하나를 모든 화면 같은 자리에</h2><p class="muted">로그인한 뒤 쓰는 화면이에요. 개발 작업이 작아서 먼저 할 수 있어요.</p></div>
+    {{class}}
+    <div class="why"><b>이 자리가 좋은 이유</b>거의 모든 화면에 제목 옆 'ⓘ 사용 가이드'가 이미 같은 자리에 있어요. 바로 옆에 똑같은 모양의 버튼을 붙이면 관장님이 어느 화면에서든 같은 곳을 찾아요. 누르면 작은 창에서 영상이 나오고, 닫으면 하던 일로 돌아와요.</div>
+    {{rest}}
+    <div class="why"><b>영상 한 편에 여러 화면이 나올 때</b>그 화면 부분부터 재생되게 해요. 예를 들어 '휴관 수련생 조회'에서 누르면 20편의 재입관 부분(1분 15초)부터 나와요. 유튜브 주소 끝에 시각만 붙이면 돼요.</div>
+    {{home}}
+    <div class="why"><b>처음 쓰는 관장님이 가장 먼저 보는 창</b>로그인하면 뜨는 안내 창의 순서 6개(반 만들기 → 차량 등록)가 영상 3~8편과 정확히 맞아요. 글보다 영상을 먼저 보고 따라 할 수 있어요.</div>
+    {{classguide}}
+    {{login}}
+  </section>
+
+  <section>
+    <div class="sec-title"><h2>② 공개 홈페이지: 검색과 AI가 읽는 자리</h2><p class="muted">개발자가 SEO 체크리스트대로 페이지를 고친 뒤에 넣어요. 지금은 이 페이지들이 검색로봇에게 빈 페이지로 보여요.</p></div>
+    {{guide}}
+    <div class="why"><b>영상만 넣으면 안 되는 이유</b>검색로봇과 AI는 영상을 보지 못하고 글만 읽어요. 그래서 영상 아래에 단계 글, 영상 대본, 자주 묻는 질문을 같이 넣어야 AI가 "태권도장 반 만드는 법"을 물을 때 태권월드를 인용해요.</div>
+    {{main}}
+    <div class="mock">
+      <h3>메인 홈페이지에 새로 넣을 칸 (예시)</h3>
+      <p class="muted">'서비스 소개' 아래에 두면, 도입을 고민하는 관장님에게 "이렇게 쉽다"를 보여 주는 홍보 칸이 돼요.</p>
+      <div class="cards">
+        <div class="card"><div class="th">출결 관리<br>QR 출석</div><div class="t">9편 · 출석 체크 3가지</div></div>
+        <div class="card"><div class="th">수련비 청구서</div><div class="t">10편 · 카드·계좌로 받기</div></div>
+        <div class="card"><div class="th">디지털 승급증</div><div class="t">15편 · 등록하면 바로 발급</div></div>
+        <div class="card"><div class="th">학부모 앱 초대</div><div class="t">7편 · 공지·알림장 받기</div></div>
+      </div>
+      <p class="muted">맨 아래에는 유튜브 채널 링크, 사용자 가이드 첫 화면에는 파트별 영상 목록을 넣어요.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-title"><h2>전체 연결표: 어느 화면에 몇 편</h2><p class="muted">'시작'이 비어 있으면 처음부터 재생해요.</p></div>
+    <div class="tbl"><table><thead><tr><th>메뉴</th><th>화면</th><th>영상</th><th>시작</th></tr></thead><tbody>{{table}}</tbody></table></div>
+  </section>
+
+  <section>
+    <div class="sec-title"><h2>할 일 순서</h2></div>
+    <ol class="order">
+      <li><span class="when now">지금</span><div><b>유튜브에 28편 올리기</b><br><span class="muted">업로드 표를 복사해 붙이면 돼요. 올리면 영상마다 주소가 생겨요.</span></div></li>
+      <li><span class="when">개발 ①</span><div><b>관장님 화면에 '영상으로 보기' 버튼</b><br><span class="muted">이 페이지의 ①과 연결표를 개발자에게 전달해요. 버튼 하나를 만들어 화면마다 주소만 바꿔 끼우는 작업이에요.</span></div></li>
+      <li><span class="when">개발 ②</span><div><b>SEO 체크리스트 + 공개 가이드 페이지에 영상</b><br><span class="muted">검색로봇이 읽을 수 있게 고친 뒤, 가이드 페이지와 메인 홈페이지에 영상을 넣어요. 가이드 항목이 없는 공지·알림장·일정·체력평가·헬스케어·도장 홈페이지·대시보드·사범 관리 8곳은 새 페이지가 필요해요.</span></div></li>
+    </ol>
+  </section>
+</div>
