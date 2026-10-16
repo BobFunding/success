@@ -1,5 +1,5 @@
 import json
-F = json.load(open("figs.json"))
+F = json.load(open("figs.json")); F.update(json.load(open("figs2.json")))
 def fig(key, cap):
     img, marks = F[key]
     ov = ""
@@ -29,7 +29,12 @@ for k, cap in [("class","반 관리 화면: 제목 옆 '사용 가이드' 바로
                ("classguide","화면에 처음 들어가면 뜨는 사용 가이드 창: 제목 옆에도 같은 버튼"),
                ("login","로그인 화면: 회원가입 아래에 1편, 아이디·비밀번호 찾기 옆에 26편"),
                ("guide","공개 사용자 가이드 페이지: 글 맨 위에 영상, 그 아래 단계 글과 대본"),
-               ("main","메인 홈페이지(taekwonworld.net) 지금 모습")]:
+               ("main","메인 홈페이지(taekwonworld.net) 지금 모습"),
+               ("r1","일정 화면에 처음 들어가면 저절로 뜨는 '일정 사용 가이드' 창"),
+               ("r2a","일정이 하나도 없을 때 오른쪽 '일정이 없습니다' 자리"),
+               ("r2b","결제서비스 가입 전 '청구서 발행' 화면: 'PG 가입신청' 버튼 옆"),
+               ("r3a","왼쪽 맨 위 ≡ 버튼을 누르면 나오는 작은 창 (내 정보·로그아웃)"),
+               ("r3b","도장 로고 옆 ⋮ 버튼에 숨어 있는 '등록된 도장 보기'")]:
     html = html.replace("{{" + k + "}}", fig(k, cap))
 html = html.replace("{{table}}", table)
 open("영상_배치_안내.html", "w").write(html)
