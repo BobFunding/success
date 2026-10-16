@@ -54,6 +54,13 @@ class Ep19Recorder(E16.Ep16Recorder):
         pg.route("**/*", guard)
         self.blocking = True
 
+    def look(self, b, hold):
+        """누르지 않고 b 자리로 줌(클릭 효과 없음): 표·그래프를 크게 보여 줄 때."""
+        from autoedit.tutorial.recorder import SCALE
+        z = max(1.0, min(1.8, 0.85 * 1920 / (b["width"] + 40), 0.85 * 1080 / (b["height"] + 40)))
+        self.log["clicks"].append({"t": round(self.now(), 3), "x": (b["x"] + b["width"] / 2) * SCALE,
+                                   "y": (b["y"] + b["height"] / 2) * SCALE, "ghost": True, "hold": round(hold, 2), "zoom": round(z, 2)})
+
     def panel(self, title, mw=400, mh=200):
         b = self.holder_box(title, mw, mh)
         if not b:
@@ -66,6 +73,7 @@ class Ep19Recorder(E16.Ep16Recorder):
         for b in boxes[1:]:
             u = self.union(u, b)
         self.spot(self.rect(u["x"] - 6, u["y"] - 6, u["width"] + 12, u["height"] + 12), self.now(), end + 0.2, 0)
+        self.look(u, end - self.now() - 0.3)
         for b in boxes:
             self.glide(b["x"] + b["width"] * 0.4, b["y"] + 40, max(0.6, self.dur[s.key] / (len(boxes) + 1)))
             self.sleep(0.2)
@@ -93,13 +101,14 @@ class Ep19Recorder(E16.Ep16Recorder):
     def one(self, s, end, title, mw=500, mh=300):
         b = self.panel(title, mw, mh)
         self.spot(self.rect(b["x"] - 6, b["y"] - 6, b["width"] + 12, b["height"] + 12), self.now(), end + 0.2, 0)
+        self.look(b, end - self.now() - 0.3)
         self.glide(b["x"] + 120, b["y"] + 40, 0.8)
         self.sleep(max(0.6, self.dur[s.key] * 0.3))
         self.glide(b["x"] + b["width"] * 0.7, b["y"] + b["height"] * 0.55, max(0.8, self.dur[s.key] * 0.3))
 
     def do_D1(self, s, end): self.one(s, end, "월별 소속 수련생 수")
     def do_D2(self, s, end): self.one(s, end, "급/품/단 수련생 통계")
-    def do_D3(self, s, end): self.one(s, end, "2026년 10월 수련비 납부율")
+    def do_D3(self, s, end): self.one(s, end, "2026년 10월 수련비 납부율", 400, 300)
     def do_D4(self, s, end): self.one(s, end, "반 정보")
 
     def do_D5(self, s, end):                       # 왼쪽 메뉴 훑기

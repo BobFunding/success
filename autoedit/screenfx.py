@@ -155,6 +155,10 @@ def plan_focus(acts: list[FrameActivity], clicks: list[dict], W: int, H: int,
             if c.get("nozoom"):      # 창 닫기처럼 누른 뒤 그 자리가 비는 클릭: 줌하지 않고 전체를 보여 준다
                 continue
             t = float(c["t"])
+            if c.get("ghost"):       # 누르지 않고 보여 주기만 하는 자리(표·그래프): 그 자리로 정해진 배율·시간만큼 줌, 클릭 효과 없음
+                focus.append(Focus(t - s.lead, t + float(c.get("hold", s.hold)), c["x"] / W, c["y"] / H,
+                                   float(c.get("zoom", s.zoom)), "click"))
+                continue
             # 클릭 뒤 같은 영역에서 변화(입력 등)가 이어지면 그만큼 줌을 더 유지한다
             end = t + s.hold
             px, py = c["x"] / W, c["y"] / H
@@ -414,7 +418,7 @@ def render(video: Path, out: Path, s: ScreenFxSettings | None = None, clicks: li
     want = iter(frames)
     nxt = next(want, None)
     idx = 0
-    click_ts = [(float(c["t"]), c["x"] / SW, c["y"] / SH) for c in clicks] if s.click_ripple else []
+    click_ts = [(float(c["t"]), c["x"] / SW, c["y"] / SH) for c in clicks if not c.get("ghost")] if s.click_ripple else []
     try:
         while nxt is not None:
             ok, frame = cap.read()
