@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>registration_form.xlsx - Excel</title>
+<!-- 태권월드 '수련생 일괄 등록 양식'(registration_form.xlsx)을 엑셀 화면 그대로 본뜬 녹화용 화면.
+     칸 너비·줄 높이·글자색·굵기·병합·안내문은 실제 양식 파일에서 읽은 값(2026-10-14). 시트 확대 85% → 화면에 맞춰 80%. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap">
+<style>
+  :root { --green:#217346; --grid:#d4d4d4; --head:#efefef; --headtxt:#444; --sel:#217346; --blue:#4472c4; --slate:#44546a; --red:#ff0000; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #fff; font-family: "Noto Sans KR", "맑은 고딕", "Malgun Gothic", "WenQuanYi Zen Hei", sans-serif; color: #000; overflow: hidden; }
+  .title { height: 34px; background: var(--green); color: #fff; display: flex; align-items: center; padding: 0 14px; font-size: 13px; gap: 14px; }
+  .title .ico { width: 18px; height: 18px; background: #fff; color: var(--green); font-weight: 700; font-size: 12px; display: grid; place-items: center; border-radius: 2px; }
+  .title .name { flex: 1; text-align: center; }
+  .title .win { letter-spacing: 18px; font-size: 14px; }
+  .tabs { height: 30px; background: var(--green); display: flex; align-items: flex-end; gap: 2px; padding: 0 8px; font-size: 13px; }
+  .tabs span { color: #fff; padding: 6px 13px; }
+  .tabs span.on { background: #f3f3f3; color: var(--green); border-radius: 3px 3px 0 0; font-weight: 700; }
+  .ribbon { height: 92px; background: #f3f3f3; border-bottom: 1px solid #d6d6d6; display: flex; padding: 6px 10px 0; gap: 0; font-size: 12px; color: #333; }
+  .grp { display: flex; flex-direction: column; justify-content: space-between; padding: 0 14px; border-right: 1px solid #d6d6d6; }
+  .grp .tools { display: flex; gap: 8px; align-items: center; flex: 1; }
+  .grp .cap { text-align: center; color: #666; font-size: 11px; padding-bottom: 4px; }
+  .btn { border: 1px solid #c8c8c8; background: #fff; padding: 3px 8px; border-radius: 2px; font-size: 12px; }
+  .big { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11.5px; }
+  .big i { width: 30px; height: 30px; border: 1px solid #bbb; background: #fafafa; border-radius: 3px; display: block; }
+  .fbar { height: 30px; display: flex; align-items: center; border-bottom: 1px solid #d6d6d6; font-size: 13px; }
+  .namebox { width: 90px; height: 24px; margin: 0 6px; border: 1px solid #c6c6c6; padding: 2px 6px; }
+  .fx { width: 60px; text-align: center; color: #777; font-style: italic; border-right: 1px solid #ddd; }
+  .formula { flex: 1; padding: 0 8px; white-space: nowrap; overflow: hidden; }
+  .sheetwrap { position: absolute; top: 186px; bottom: 54px; left: 0; right: 0; overflow: hidden; background: #fff; }
+  .sheet { zoom: 0.8; }
+  table { border-collapse: collapse; table-layout: fixed; }
+  th { background: var(--head); color: var(--headtxt); font-weight: 400; font-size: 14px; border: 1px solid #c8c8c8; height: 24px; }
+  th.rh { width: 46px; }
+  td { border: 1px solid var(--grid); padding: 0 3px; font-size: 14.6px; text-align: center; vertical-align: middle; height: 26px; position: relative; overflow: hidden; }
+  tr.r1 td { height: 110px; border: 1px solid #000; white-space: pre-line; line-height: 1.32; font-size: 13.4px; }
+  tr.r2 td, tr.r3 td { border: 1px solid #000; }
+  tr.r1 td.a1 { font-size: 16px; font-weight: 700; }
+  tr.r3 td { font-size: 16px; font-weight: 700; height: 23px; }
+  tr.d td { border: 1px solid #000; }
+  .b { color: var(--blue); font-weight: 700; }
+  .k { color: #000; }
+  .rd { color: var(--red); }
+  .eg { color: var(--slate); }
+  td input { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; outline: 0; background: transparent; font: inherit; text-align: center; padding: 0 3px; }
+  td.sel { outline: 2px solid var(--sel); outline-offset: -2px; z-index: 2; }
+  .dd { position: absolute; right: 0; top: 0; width: 20px; height: 100%; background: #f0f0f0; border-left: 1px solid #bbb; display: none; align-items: center; justify-content: center; font-size: 11px; cursor: pointer; z-index: 3; }
+  td.sel .dd { display: flex; }
+  .list { position: absolute; z-index: 10; background: #fff; border: 1px solid #888; box-shadow: 0 2px 6px rgba(0,0,0,.25); font-size: 14.6px; display: none; }
+  .list div { padding: 3px 12px; cursor: pointer; }
+  .list div:hover { background: #cde6f7; }
+  .bottom { position: absolute; bottom: 24px; left: 0; right: 0; height: 30px; background: #f3f3f3; border-top: 1px solid #d6d6d6; display: flex; align-items: stretch; font-size: 13px; }
+  .bottom .nav { width: 70px; display: flex; align-items: center; justify-content: center; color: #999; letter-spacing: 6px; }
+  .bottom .tab { padding: 0 20px; display: flex; align-items: center; color: #444; border-right: 1px solid #ddd; }
+  .bottom .tab.on { background: #fff; color: var(--green); font-weight: 700; border-bottom: 3px solid var(--green); }
+  .bottom .plus { padding: 0 12px; display: flex; align-items: center; color: #666; font-size: 18px; }
+  .status { position: absolute; bottom: 0; left: 0; right: 0; height: 24px; background: #f3f3f3; border-top: 1px solid #ddd; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-size: 12px; color: #555; }
+</style>
+</head>
+<body>
+<div class="title"><div class="ico">X</div><span>자동 저장 ● 끔</span><span class="name">registration_form.xlsx - Excel</span><span class="win">─ ☐ ✕</span></div>
+<div class="tabs"><span>파일</span><span class="on">홈</span><span>삽입</span><span>페이지 레이아웃</span><span>수식</span><span>데이터</span><span>검토</span><span>보기</span><span>도움말</span></div>
+<div class="ribbon">
+  <div class="grp"><div class="tools"><div class="big"><i></i>붙여넣기</div><div style="display:flex;flex-direction:column;gap:6px">잘라내기<br>복사</div></div><div class="cap">클립보드</div></div>
+  <div class="grp"><div class="tools" style="flex-direction:column;align-items:flex-start;justify-content:center;gap:6px"><div><span class="btn" style="width:150px;display:inline-block">맑은 고딕</span> <span class="btn">11</span></div><div><b>가</b>&nbsp;&nbsp;<i>가</i>&nbsp;&nbsp;<u>가</u>&nbsp;&nbsp;&nbsp;<span style="color:#c00">가</span></div></div><div class="cap">글꼴</div></div>
+  <div class="grp"><div class="tools" style="flex-direction:column;justify-content:center;gap:6px"><div>≡ ≡ ≡&nbsp;&nbsp; 텍스트 줄 바꿈</div><div>≡ ≡ ≡&nbsp;&nbsp; 병합하고 가운데 맞춤</div></div><div class="cap">맞춤</div></div>
+  <div class="grp"><div class="tools"><span class="btn" style="width:110px">일반</span></div><div class="cap">표시 형식</div></div>
+  <div class="grp"><div class="tools"><div class="big"><i></i>조건부 서식</div><div class="big"><i></i>표 서식</div><div class="big"><i></i>셀 스타일</div></div><div class="cap">스타일</div></div>
+  <div class="grp"><div class="tools"><div class="big"><i></i>삽입</div><div class="big"><i></i>삭제</div><div class="big"><i></i>서식</div></div><div class="cap">셀</div></div>
+  <div class="grp" style="border:0"><div class="tools"><div class="big"><i></i>정렬 및 필터</div><div class="big"><i></i>찾기 및 선택</div></div><div class="cap">편집</div></div>
+</div>
+<div class="fbar"><div class="namebox" id="nb">A1</div><div class="fx">fx</div><div class="formula" id="fm">※ 빨간색으로 표시된 항목은 필수 입력 사항입니다.</div></div>
+
+<div class="sheetwrap"><div class="sheet">
+<table id="t">
+  <colgroup id="cols"></colgroup>
+  <thead><tr id="hdr"><th class="rh"></th></tr></thead>
+  <tbody>
+    <tr class="r1"><th class="rh">1</th>
+      <td colspan="3" class="a1" data-c="A1">※ 빨간색으로
+표시된 항목은<span class="rd">
+필수 입력 사항</span>입니다.</td>
+      <td class="b" data-c="D1">남자일 경우 0,
+여자일 경우 1 을
+선택해주세요.</td>
+      <td data-c="E1"><span class="b">(-) 없이 8자리 숫자로만 입력해주세요.</span>
+
+2020년 6월 20일생이라면
+200620  ( X )
+20200620  ( O )</td>
+      <td data-c="F1"><span class="b">소속반을 정확히 입력해주세요.</span>
+
+생성하신 반 이름과
+일치하지 않을 경우
+조회가 불가능합니다.</td>
+      <td class="b" data-c="G1">숫자만
+입력</td>
+      <td class="b" data-c="H1">급/품/단
+선택</td>
+      <td data-c="I1"><span class="b">(-) 없이 11자리 숫자로만 입력해주세요.</span>
+
+010-1234-5678 ( X )
+01012345678 ( O )</td>
+      <td class="b" data-c="J1">보호자 이름을
+입력해주세요.</td>
+      <td data-c="K1"><span class="b">청구서가 발행 될 휴대폰 번호입니다.
+(-) 없이 11자리 숫자로만 입력해주세요.</span>
+
+010-8765-4321 ( X )
+01087654321  ( O )</td>
+      <td data-c="L1"><span class="b">숫자로만 입력해주세요.</span>
+
+, 없이 금액만 입력</td>
+      <td data-c="M1"><span class="b">(-) 없이 숫자로만 입력해주세요.</span>
+
+매월 6일 납부라면 6
+매월 13일 납부라면 13 입력</td>
+      <td data-c="N1"><span class="b">(-) 없이 8자리 숫자로만 입력해주세요.</span>
+
+230801     ( X )
+20230801  ( O )</td>
+      <td style="border:1px solid var(--grid)"></td><td style="border:1px solid var(--grid)"></td>
+    </tr>
+    <tr class="r2"><th class="rh">2</th>
+      <td>예시</td><td class="eg">홍</td><td class="eg">길동</td><td class="eg">1</td><td class="eg">20100620</td><td class="eg">초등1반</td><td class="eg">3</td><td class="eg">급</td><td class="eg">01012345678</td><td class="eg">홍상직</td><td class="eg">01087654321</td><td class="eg">150000</td><td class="eg">13</td><td class="eg">20230801</td><td style="border:1px solid var(--grid)"></td><td style="border:1px solid var(--grid)"></td>
+    </tr>
+    <tr class="r3"><th class="rh">3</th>
+      <td></td><td class="rd">성</td><td class="rd">이름</td><td class="rd">성별</td><td class="rd">생년월일</td><td class="rd">소속반</td><td class="rd" colspan="2">급/품/단</td><td class="k">전화번호</td><td class="k">보호자이름</td><td class="rd">청구서 연락처</td><td class="rd">수강료 (원)</td><td class="rd">납부일</td><td class="rd">도장 등록일</td><td style="border:1px solid var(--grid)"></td><td style="border:1px solid var(--grid)"></td>
+    </tr>
+  </tbody>
+</table>
+</div></div>
+<div class="list" id="lst"><div>급</div><div>품</div><div>단</div></div>
+<div class="bottom"><div class="nav">◀ ▶</div><div class="tab on">Sheet1</div><div class="tab">Sheet2</div><div class="tab">Sheet3</div><div class="plus">⊕</div></div>
+<div class="status"><span>준비</span><span>▦ ▤ ▥ &nbsp;&nbsp; ─────●───── + &nbsp; 85%</span></div>
+
+<script>
+// 열 너비(엑셀 단위 → 픽셀: 단위×7+5)와 열 머리
+const W = {A:9,B:13,C:13,D:16.2,E:34.5,F:29.5,G:9,H:9.6,I:34.9,J:15.2,K:36.2,L:22.9,M:27.8,N:36,O:9,P:13};
+const cols = document.getElementById('cols'), hdr = document.getElementById('hdr');
+cols.innerHTML = '<col style="width:46px">' + Object.values(W).map(w => `<col style="width:${Math.round(w*7+5)}px">`).join('');
+for (const k of Object.keys(W)) hdr.insertAdjacentHTML('beforeend', `<th data-col="${k}">${k}</th>`);
+// 4~16 행: 4·5행은 적을 수 있는 칸(번호 = ROW()-3), H 열은 목록(급/품/단)
+const tb = document.querySelector('tbody');
+for (let r = 4; r <= 16; r++) {
+  let h = `<tr class="d"><th class="rh">${r}</th><td>${r-3}</td>`;
+  for (const c of 'BCDEFGHIJKLMN') h += `<td data-c="${c}${r}"><input id="${c}${r}" autocomplete="off">${c==='H' ? '<span class="dd">▾</span>' : ''}</td>`;
+  h += '<td style="border:1px solid var(--grid)"></td><td style="border:1px solid var(--grid)"></td></tr>';
+  tb.insertAdjacentHTML('beforeend', h);
+}
+// 1~3행 칸에도 주소(A1, B3 …)를 붙인다(병합 칸은 첫 칸 주소)
+const L = Object.keys(W);
+document.querySelectorAll('tr.r1, tr.r2, tr.r3').forEach((tr, ri) => {
+  let ci = 0;
+  tr.querySelectorAll('td').forEach(td => { if (!td.dataset.c) td.dataset.c = L[ci] + (ri + 1); ci += td.colSpan || 1; });
+});
+// 셀 고르면 초록 테두리 + 이름 상자·수식 입력줄 갱신
+const nb = document.getElementById('nb'), fm = document.getElementById('fm'), lst = document.getElementById('lst');
+let cur = null;
+function select(td) {
+  document.querySelectorAll('td.sel').forEach(e => e.classList.remove('sel'));
+  td.classList.add('sel'); cur = td; nb.textContent = td.dataset.c || '';
+  const i = td.querySelector('input'); fm.textContent = i ? i.value : td.innerText.replace(/\n/g, ' ');
+  lst.style.display = 'none';
+}
+document.addEventListener('mousedown', e => {
+  const it = e.target.closest('.list div');
+  if (it) { const i = cur.querySelector('input'); i.value = it.textContent; fm.textContent = i.value; lst.style.display = 'none'; e.preventDefault(); return; }
+  const dd = e.target.closest('.dd');
+  if (dd) { const r = dd.getBoundingClientRect(); lst.style.left = (r.right - 70) + 'px'; lst.style.top = (r.bottom + 1) + 'px'; lst.style.minWidth = '70px'; lst.style.display = 'block'; e.preventDefault(); return; }
+  const td = e.target.closest('td[data-c]'); if (td) select(td);
+});
+document.addEventListener('input', e => { if (cur) fm.textContent = e.target.value; });
+</script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>태권월드 QR 출석 앱</title>
+<!-- 9편 녹화용: 공식 '태권월드-QR 출석관리 서비스 App 사용자 가이드'(PDF) 그림을 한 장씩 보여 준다.
+     1 = QR 출석(qr_scan.png, 휴대폰 4개), 2 = 출석번호로 수동 출석(qr_manual.png, 휴대폰 3개). 사진·이름·QR 무늬는 흐림.
+     녹화기가 show(장, 칸) 으로 넘기고, 밝게 할 자리는 #hot (그림 기준 비율 위치). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #eef1f8; font-family: "Noto Sans KR", "WenQuanYi Zen Hei", sans-serif; overflow: hidden; }
+  .top { position: absolute; left: 90px; top: 56px; right: 90px; display: flex; align-items: center; gap: 22px; }
+  .tag { background: #2e5cff; color: #fff; font-weight: 700; font-size: 22px; padding: 8px 18px; border-radius: 999px; white-space: nowrap; }
+  h1 { margin: 0; font-size: 42px; color: #191919; }
+  .sub { position: absolute; left: 90px; top: 128px; font-size: 24px; color: #4a5368; }
+  .board { position: absolute; left: 90px; right: 90px; top: 190px; bottom: 60px; background: #fff; border-radius: 28px;
+           box-shadow: 0 20px 50px rgba(20, 30, 70, .12); display: flex; align-items: center; justify-content: center; }
+  .board img { position: absolute; max-width: 92%; max-height: 90%; opacity: 0; transition: opacity .45s ease; }
+  .board img.on { opacity: 1; }
+  #hot { position: absolute; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="top"><span class="tag">태권월드 QR 출석 앱</span><h1 id="title">QR로 출석하기</h1></div>
+<div class="sub" id="sub">도장에 둔 태블릿(관리자)과 아이의 태권월드 앱으로 출석해요.</div>
+<div class="board" id="board">
+  <img id="i1" src="qr_scan.png" alt="QR 출석">
+  <img id="i2" src="qr_manual.png" alt="출석번호로 출석">
+  <div id="hot"></div>
+</div>
+<script>
+const pages = {
+  1: { title: "QR로 출석하기", sub: "도장에 둔 태블릿(관리자)과 아이의 태권월드 앱으로 출석해요.",
+       // 그림 안 휴대폰 자리(비율): 리더기 / 아이 앱 QR 아이콘 / 아이 QR / 리더기로 비추기
+       hots: [[0.005, 0.01, 0.195, 0.98], [0.27, 0.01, 0.195, 0.98], [0.535, 0.01, 0.195, 0.98], [0.80, 0.01, 0.195, 0.98], [0.27, 0.01, 0.73, 0.98]] },
+  2: { title: "출석번호로 출석하기", sub: "휴대폰이 없는 아이는, 출석번호 4자리만 누르면 돼요.",
+       // 수동 버튼 / 번호 4자리 / 출석 확인 창
+       hots: [[0.005, 0.01, 0.27, 0.98], [0.355, 0.01, 0.27, 0.98], [0.715, 0.01, 0.28, 0.98]] },
+};
+function show(p, h) {
+  for (const k of [1, 2]) document.getElementById('i' + k).classList.toggle('on', k === p);
+  document.getElementById('title').textContent = pages[p].title;
+  document.getElementById('sub').textContent = pages[p].sub;
+  const img = document.getElementById('i' + p).getBoundingClientRect(), bd = document.getElementById('board').getBoundingClientRect();
+  const [x, y, w, hh] = pages[p].hots[(h || 1) - 1];
+  Object.assign(document.getElementById('hot').style, { left: (img.x - bd.x + x * img.width) + 'px', top: (img.y - bd.y + y * img.height) + 'px',
+    width: (w * img.width) + 'px', height: (hh * img.height) + 'px' });
+}
+window.addEventListener('load', () => show(1, 1));
+</script>
+</body>
+</html>
