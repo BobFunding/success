@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>도장 홈페이지, 왜 필요할까요</title>
+<!-- 18편 녹화용 안내 화면: 도장 홈페이지가 왜 필요한지(사용자 요청: '왜 하려고 하는지' 맥락의 이야기). 밝게 할 자리 #hot-a(학부모님이 찾아봄) · #hot-b(홈페이지로 할 수 있는 것). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700;900&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #eef1f8; font-family: "Noto Sans KR", "WenQuanYi Zen Hei", sans-serif; overflow: hidden; }
+  .stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 70px; }
+  .card { background: #fff; border-radius: 28px; box-shadow: 0 24px 60px rgba(20, 30, 70, .14); }
+  #hot-a { width: 560px; padding: 44px 40px; }
+  .who { display: inline-block; background: #2e5cff; color: #fff; font-weight: 700; font-size: 22px; padding: 8px 18px; border-radius: 999px; }
+  #hot-a h2 { font-size: 40px; line-height: 1.35; margin: 22px 0 26px; color: #191919; }
+  .search { display: flex; align-items: center; gap: 14px; border: 3px solid #2e5cff; border-radius: 999px; padding: 16px 24px; font-size: 26px; color: #191919; font-weight: 700; }
+  .search svg { flex: none; }
+  .hint { font-size: 22px; color: #6b7280; margin-top: 18px; line-height: 1.5; }
+  #hot-b { width: 600px; padding: 40px 44px; }
+  #hot-b h2 { font-size: 34px; margin: 0 0 22px; color: #191919; }
+  .row { display: flex; gap: 18px; align-items: center; padding: 16px 0; border-top: 2px solid #eef0f4; }
+  .row:first-of-type { border-top: 0; }
+  .ic { flex: none; width: 58px; height: 58px; border-radius: 16px; background: #e8eeff; display: grid; place-items: center; font-size: 30px; }
+  .row div { font-size: 26px; color: #191919; font-weight: 700; line-height: 1.35; }
+  .row small { display: block; font-size: 20px; color: #6b7280; font-weight: 500; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card" id="hot-a">
+    <span class="who">학부모님은</span>
+    <h2>도장을 고르기 전에<br>먼저 인터넷에서 찾아봐요</h2>
+    <div class="search"><svg width="30" height="30" viewBox="0 0 24 24"><circle cx="10" cy="10" r="7" fill="none" stroke="#2e5cff" stroke-width="3"/><path d="M15 15l6 6" stroke="#2e5cff" stroke-width="3" stroke-linecap="round"/></svg>우리 동네 태권도장</div>
+    <div class="hint">홈페이지가 있으면, 찾아본 학부모님께<br>우리 도장을 제대로 보여 줄 수 있어요.</div>
+  </div>
+  <div class="card" id="hot-b">
+    <h2>도장 홈페이지로 할 수 있는 것</h2>
+    <div class="row"><span class="ic">📢</span><div>도장 소식 알리기<small>행사·심사 소식을 한곳에</small></div></div>
+    <div class="row"><span class="ic">📷</span><div>수련 사진 보여 주기<small>도장앨범으로 분위기 전하기</small></div></div>
+    <div class="row"><span class="ic">📍</span><div>위치와 상담 연결<small>찾아오는 길, 바로 상담</small></div></div>
+  </div>
+</div>
+</body>
+</html>

@@ -286,7 +286,7 @@ def load(path: str | Path) -> Scenario:
 
 
 # 읽는 말 → 자막 표기(제품 모델명처럼 소리와 글자가 다른 것). 목소리는 왼쪽대로 읽고 자막에는 오른쪽이 나온다.
-SPOKEN_TO_TEXT = {"비씨 삼팔공 플러스": "BC380 PLUS"}
+SPOKEN_TO_TEXT = {"비씨 삼팔공 플러스": "BC380 PLUS", "에이알에스": "ARS", "큐알 코드": "QR 코드", "에스엔에스": "SNS"}
 
 
 def subtitle_text(text: str, brand: Brand) -> str:
