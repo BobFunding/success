@@ -42,7 +42,7 @@ for n in range(1, 29):
         "· 구글플레이: https://play.google.com/store/apps/details?id=com.aivill.taekwonworld",
         "· 네이버 블로그: https://blog.naver.com/taekwon_world",
         "· 문의: 070-7777-5774 · tkw@aivill.co.kr",
-        "· 운영: (주)스포츠이앤티", "",
+        "· 운영: 에이아이빌(AIVILL)", "",
         f"#태권월드 #태권도장관리 #{hashtag}"])
     tagstr = ", ".join(dict.fromkeys(BASE_TAGS + tags + [f"태권월드 {n}편"]))
     pin = f"Q. {q}\nA. {a}\n\n더 자세한 단계별 안내는 여기서 볼 수 있어요: {guide}"
@@ -58,7 +58,7 @@ playlists.insert(0, {"name": "태권월드 사용법 전체 (1~28편)",
 channel = {
   "name": "태권월드 Taekwon World",
   "handle": "@taekwonworld",
-  "about": ABOUT + "\n\n이 채널에서는 관장님이 태권월드를 처음 가입하는 날부터 출결, 수련비, 승급, 학부모 소통, 도장 관리까지 따라 할 수 있는 사용법 영상(28편)을 올립니다.\n\n문의: 070-7777-5774 · tkw@aivill.co.kr\n운영: (주)스포츠이앤티",
+  "about": ABOUT + "\n\n이 채널에서는 관장님이 태권월드를 처음 가입하는 날부터 출결, 수련비, 승급, 학부모 소통, 도장 관리까지 따라 할 수 있는 사용법 영상(28편)을 올립니다.\n\n문의: 070-7777-5774 · tkw@aivill.co.kr\n운영: 에이아이빌(AIVILL)",
   "keywords": "태권월드, Taekwon World, 태권도장 관리 프로그램, 태권도장 관리 앱, 태권도 출석 체크, 수련비 자동결제, 디지털 승급증, 학부모 앱",
   "links": LINKS,
 }
