@@ -1,0 +1,9 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>로그인 - 푸른숲 도서관</title><link rel="stylesheet" href="style.css"><style></style></head>
+<body><header><a class="logo" href="index.html">푸른숲 도서관</a><nav><a href="index.html">처음으로</a></nav></header>
+
+<form class="card" style="width:480px" onsubmit="return go(event)"><h1>사서 로그인</h1><p class="sub">관리자 계정으로 들어가요.</p>
+<div class="field"><label for="uid">아이디</label><input type="text" id="uid" name="uid" autocomplete="off"></div>
+<div class="field"><label for="upw">비밀번호</label><input type="password" id="upw" name="upw"></div>
+<div class="hint" id="msg" style="color:#c0392b"></div>
+<button type="submit" class="btn primary wide">로그인</button></form>
+<script>function go(e){e.preventDefault();if(uid.value==='librarian'&&upw.value==='book1234!'){localStorage.setItem('login','1');location.href='admin.html'}else{msg.textContent='아이디나 비밀번호가 맞지 않아요.'}return false}</script></body></html>

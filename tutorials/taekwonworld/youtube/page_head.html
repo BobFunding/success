@@ -1,0 +1,75 @@
+<title>태권월드 유튜브 업로드 표</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 업로드 작업표: 왼쪽 흐름대로 위에서 아래로(채널 → 재생목록 → 28편). 도장 남색 + 승급증 도장 빨강을 포인트로 */
+:root{
+  --bg:#f5f6fb; --panel:#ffffff; --ink:#18203d; --muted:#5b6385; --line:#dfe2ef;
+  --accent:#2c3fa6; --accent-soft:#e7eafb; --stamp:#c62a2a; --ok:#1f7a4d; --ok-soft:#e1f3e9;
+  --field:#f8f9fd;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11152a; --panel:#1a1f38; --ink:#e7e9f6; --muted:#a3a9c8; --line:#2c3355;
+  --accent:#8fa0ff; --accent-soft:#25306a; --stamp:#ff7b7b; --ok:#6fd6a0; --ok-soft:#173a2a; --field:#151a31; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11152a; --panel:#1a1f38; --ink:#e7e9f6; --muted:#a3a9c8; --line:#2c3355;
+  --accent:#8fa0ff; --accent-soft:#25306a; --stamp:#ff7b7b; --ok:#6fd6a0; --ok-soft:#173a2a; --field:#151a31; color-scheme:dark}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.6}
+.wrap{max-width:980px;margin:0 auto;padding-block:28px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:28px}
+h1{font-size:28px;line-height:1.3;margin:0;text-wrap:balance}
+h2{font-size:20px;margin:0;text-wrap:balance}
+h3{font-size:16px;margin:0}
+.lede{color:var(--muted);max-width:65ch;margin:6px 0 0}
+.top{display:grid;gap:14px}
+.progress{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bar{flex:1 1 220px;height:10px;background:var(--line);border-radius:6px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+.count{font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:0;padding:0;list-style:none;counter-reset:s}
+.steps li{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;counter-increment:s}
+.steps li::before{content:counter(s);display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--accent);color:var(--panel);font-size:12px;font-weight:700;margin-right:8px}
+section{display:grid;gap:14px}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:6px}
+.sec-head p{margin:0;color:var(--muted);font-size:13px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:12px;min-width:0}
+.field{display:grid;gap:6px;min-width:0}
+.field-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.label{font-size:12px;font-weight:700;letter-spacing:.04em;color:var(--muted)}
+.len{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+pre.val{margin:0;background:var(--field);border:1px solid var(--line);border-radius:8px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;font-family:var(--f-body);font-size:14px;max-height:260px;overflow:auto}
+.val.one{max-height:none}
+button.copy{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:7px;padding:4px 12px;cursor:pointer;white-space:nowrap}
+button.copy:hover{background:var(--accent-soft)}
+button.copy.done{border-color:var(--ok);color:var(--ok);background:var(--ok-soft)}
+button:focus-visible,input:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.settings li{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--field);font-size:14px}
+.settings b{display:block;font-size:12px;color:var(--muted)}
+.pl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.pl-eps{font-size:12px;color:var(--muted)}
+.part{display:grid;gap:10px}
+.part-name{font-size:14px;font-weight:700;color:var(--accent);margin-top:6px}
+details.ep{background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}
+details.ep[open]{border-color:var(--accent)}
+details.ep.up{border-left:4px solid var(--ok)}
+summary{list-style:none;cursor:pointer;padding:12px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+summary::-webkit-details-marker{display:none}
+.no{font-family:var(--f-mono);font-size:13px;font-weight:500;color:var(--panel);background:var(--accent);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums}
+.ep.up .no{background:var(--ok)}
+.sum-title{min-width:0;font-weight:600;line-height:1.4}
+.sum-meta{font-size:12px;color:var(--muted);font-weight:400}
+.done-box{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap}
+.done-box input{width:18px;height:18px;accent-color:var(--ok)}
+.ep-body{padding:0 14px 16px;display:grid;gap:14px}
+.todo{margin:0;padding:10px 12px;list-style:none;display:grid;gap:4px;font-size:14px;background:var(--accent-soft);border-radius:8px}
+.todo li::before{content:"☐ ";color:var(--accent)}
+.note{font-size:13px;color:var(--muted);margin:0}
+.after{display:grid;gap:8px;margin:0;padding-left:20px}
+a{color:var(--accent)}
+.stamp{color:var(--stamp);font-weight:700}
+@media (max-width:520px){summary{grid-template-columns:auto 1fr}.done-box{grid-column:1/-1}h1{font-size:23px}}
+@media (prefers-reduced-motion:reduce){.bar>i{transition:none}}
+</style>

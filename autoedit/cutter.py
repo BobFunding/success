@@ -15,7 +15,8 @@ from .transcribe import Word
 _PUNCT = re.compile(r"[\s.,!?…~\-\"'“”‘’()]+")
 
 # 어떤 문맥에서도 의미가 없는 말버릇 → 무조건 컷
-STRONG_FILLER = re.compile(r"^(어|음|으|엄|흠|어음|으음|음음|어어|에|에에|아아|어후|하아)+$")
+STRONG_FILLER = re.compile(r"^(어|음|으|엄|흠|어음|으음|음음|어어|에|에에|아아|어후|하아"
+                           r"|u+h+|u+m+|uh+m+|e+r+m*|h+m+)+$", re.IGNORECASE)  # 영어 필러: uh, um, uhm, er, hmm
 # 의미가 있을 수도 있는 말 → Claude 가 문맥 보고 판단 (API 키 없으면 남겨둠)
 WEAK_FILLER = re.compile(r"^(아|그|저|뭐|막|이제|약간|좀|그니까|그러니까|그래서|저기|이렇게|뭐랄까|있잖아|있잖아요|네|예)$")
 
@@ -238,7 +239,7 @@ class TimeMap:
 # ───────────────────────── 렌더링 ─────────────────────────
 
 def render_cut(src: Path, dst: Path, segments: list[tuple[float, float]], info: VideoInfo,
-               cq: int, work_dir: Path, log=print, audio_fade: float = 0.015) -> None:
+               cq: int, work_dir: Path, log=print, audio_fade: float = 0.015, x264_preset: str = "medium") -> None:
     # 구간 [a, b) 의 프레임만 고른다. 반 프레임 당겨서 비교해야 끝 프레임이 하나 더 들어가지 않는다
     # (프레임 수 = 오디오 길이와 정확히 일치 → 구간이 많아도 싱크가 밀리지 않음)
     h = 0.5 / info.fps
@@ -260,5 +261,5 @@ def render_cut(src: Path, dst: Path, segments: list[tuple[float, float]], info: 
     script.write_text(";\n".join(parts), encoding="utf-8")
     log(f"[컷] {len(segments)}개 구간을 이어붙여 렌더링 중...")
     run_ffmpeg(["-i", str(src), *filter_script_args(script), *maps,
-                *video_encoder_args(max(cq - 2, 14)), "-c:a", "aac", "-b:a", "192k",
+                *video_encoder_args(max(cq - 2, 14), x264_preset), "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart", str(dst)], log)

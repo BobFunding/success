@@ -1,0 +1,18 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>회원 등록 - 푸른숲 도서관</title><link rel="stylesheet" href="style.css"><style>.menu{display:flex;gap:8px;list-style:none;margin:0;padding:0}.menu>li{position:relative}.menu>li>a{display:block;padding:26px 16px;color:#42506a;text-decoration:none;font-size:17px}
+.menu ul{display:none;position:absolute;left:0;top:72px;background:#fff;border:1px solid #e3e6ec;border-radius:12px;box-shadow:0 12px 28px rgba(20,30,60,.12);list-style:none;margin:0;padding:8px;min-width:180px;z-index:20}
+.menu li:hover>ul{display:block}.menu ul a{display:block;padding:12px 14px;border-radius:8px;color:#1d2433;text-decoration:none}.menu ul a:hover{background:#eef2fb}
+.grid{max-width:1100px;margin:40px auto;display:grid;grid-template-columns:2fr 1fr;gap:24px}.box{background:#fff;border-radius:16px;padding:28px;box-shadow:0 8px 28px rgba(20,30,60,.06)}
+.box h2{margin:0 0 12px;font-size:22px}.todo li{margin:10px 0;font-size:17px}.stat{font-size:40px;font-weight:800;color:#2a5bd7}</style></head>
+<body><header><a class="logo" href="admin.html">푸른숲 도서관</a><ul class="menu"><li><a href="admin.html">대시보드</a></li><li class="has-sub"><a href="#" aria-haspopup="true">회원 관리 ▾</a><ul>
+<li><a href="members.html">회원 목록</a></li><li><a href="member-new.html">회원 등록</a></li></ul></li>
+<li class="has-sub"><a href="#" aria-haspopup="true">자료 관리 ▾</a><ul><li><a href="#">책 등록</a></li><li><a href="#">대출 현황</a></li></ul></li>
+<li><a href="#" onclick="localStorage.removeItem('login');location.href='index.html'">로그아웃</a></li></ul></header>
+<script>if(!localStorage.getItem("login"))location.replace("login.html")</script>
+<form class="card" onsubmit="return save(event)"><h1>회원 등록</h1><p class="sub">새 회원 정보를 적어 주세요.</p>
+<div class="field"><label for="mname">이름</label><input type="text" id="mname" name="member_name" autocomplete="off"></div>
+<div class="field"><label for="mphone">휴대전화</label><div class="row"><input type="text" id="mphone" name="phone" autocomplete="off">
+<button type="button" class="btn ghost" id="sms" onclick="smsHint.textContent='인증번호를 보냈어요. (연습용 번호: 482913)'">인증요청</button></div><div class="hint" id="smsHint"></div></div>
+<div class="field"><label for="mcode">인증번호</label><input type="text" id="mcode" name="code" autocomplete="off"></div>
+<div class="hint" id="saveMsg" style="color:#c0392b"></div>
+<button type="submit" class="btn primary wide">저장</button></form>
+<script>function save(e){e.preventDefault();fetch('api/save',{method:'POST',body:'x'}).then(()=>location.href='member-done.html').catch(()=>saveMsg.textContent='저장하지 못했어요. (연습용: 저장 요청이 막혔어요)');return false}</script></body></html>

@@ -1,4 +1,4 @@
-"""최종 합성: 컷 편집본 + 모자이크 + 삐- 처리 + 설명 일러스트."""
+"""최종 합성: 컷 편집본 + 모자이크 + 삐- 처리 + 설명 일러스트·스티커 + 자막."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +13,8 @@ def _even(n: float) -> int:
 
 
 def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict], beeps: list[dict],
-                 inserts: list[dict], block: int, cq: int, work_dir: Path, log=print, fx: dict | None = None) -> None:
+                 inserts: list[dict], block: int, cq: int, work_dir: Path, log=print, fx: dict | None = None,
+                 subtitles: Path | None = None, x264_preset: str = "medium") -> None:
     fx = fx or {}
     W, H = info.width, info.height
     inputs = ["-i", str(cut_video)]
@@ -57,7 +58,16 @@ def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict
         fades = (f"fade=t=in:st=0:d={a_in:.3f}:alpha=1,"
                  f"fade=t=out:st={max(0.0, dur - a_out):.3f}:d={a_out:.3f}:alpha=1")
         img, out = f"[im{k}]", nxt()
-        if ins["placement"] == "side":
+        if ins["placement"] == "sticker":
+            # 작은 아이콘: 지정한 자리에서 살짝 아래에서 튀어 오르듯(ease-out) 나타나고, 사라질 땐 그 자리에서 흐려진다
+            sw = _even(ins.get("size") or min(W, H) * 0.16)
+            px = int(ins.get("x") or W - sw - W * 0.05)
+            py = int(ins.get("y") or H * 0.08)
+            parts.append(f"[{idx}:v]format=rgba,scale={sw}:{sw}:flags=lanczos,{fades},"
+                         f"setpts=PTS-STARTPTS+{start:.3f}/TB{img}")
+            rise = f"{sw * 0.25:.1f}*pow(1-clip((t-{start:.3f})/{a_in:.3f},0,1),3)"
+            pos = f"x={px}:y='{py}+{rise}'"
+        elif ins["placement"] == "side":
             if ins.get("size"):
                 cw, px, py = _even(ins["size"]), int(ins["x"]), int(ins["y"])
             elif W >= H:
@@ -86,12 +96,20 @@ def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict
         parts.append(f"{cur}{img}overlay={pos}:eof_action=pass:enable='between(t,{start:.3f},{end:.3f})'{out}")
         cur = out
 
+    # 3) 자막: 맨 위에 입힌다 (일러스트에 가려지지 않게)
+    if subtitles and Path(subtitles).exists():
+        # 필터 옵션 안에서는 ':' 가 구분자라서 Windows 드라이브 문자(C:)를 이스케이프해야 한다
+        name = Path(subtitles).resolve().as_posix().replace(":", "\\:")
+        out = nxt()
+        parts.append(f"{cur}ass=filename='{name}'{out}")
+        cur = out
+
     if cur == "[0:v]":
         parts.append("[0:v]null[vout]")
     else:
         parts[-1] = parts[-1][: -len(cur)] + "[vout]"
 
-    # 3) 말로 나온 개인정보: 원래 소리를 끄고 1kHz 삐- 소리를 얹는다
+    # 4) 말로 나온 개인정보: 원래 소리를 끄고 1kHz 삐- 소리를 얹는다
     audio_map: list[str]
     if info.has_audio and beeps:
         cond = "+".join(f"between(t,{b['start']:.3f},{b['end']:.3f})" for b in beeps)
@@ -107,6 +125,7 @@ def render_final(cut_video: Path, dst: Path, info: VideoInfo, mosaics: list[dict
 
     script = work_dir / "final_filter.txt"
     script.write_text(";\n".join(parts), encoding="utf-8")
-    log(f"[합성] 모자이크 {len(mosaics)}건 · 삐- {len(beeps)}건 · 일러스트 {len(inserts)}장 합성 중...")
+    log(f"[합성] 모자이크 {len(mosaics)}건 · 삐- {len(beeps)}건 · 일러스트 {len(inserts)}장"
+        f"{' · 자막' if subtitles else ''} 합성 중...")
     run_ffmpeg([*inputs, *filter_script_args(script), "-map", "[vout]", *audio_map,
-                *video_encoder_args(cq), "-movflags", "+faststart", str(dst)], log)
+                *video_encoder_args(cq, x264_preset), "-movflags", "+faststart", str(dst)], log)

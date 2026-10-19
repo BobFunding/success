@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>헬스케어 연동 준비</title>
+<!-- 17편 녹화용 안내 화면: 헬스케어는 셀바스 아큐닉 BC380 PLUS 를 구매해야 연동된다(사용자 요청 2026-10-15).
+     제품 사진은 사용자가 준 BC380 PLUS 이미지(bc380.jpg). 밝게 할 자리는 #hot-a(제품) · #hot-b(순서). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700;900&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #eef1f8; font-family: "Noto Sans KR", "WenQuanYi Zen Hei", sans-serif; overflow: hidden; }
+  .stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 80px; }
+  .card { background: #fff; border-radius: 28px; box-shadow: 0 24px 60px rgba(20, 30, 70, .14); }
+  #hot-a { width: 560px; padding: 44px 40px; text-align: center; }
+  .who { display: inline-block; background: #2e5cff; color: #fff; font-weight: 700; font-size: 22px; padding: 8px 18px; border-radius: 999px; }
+  .brand { font-size: 26px; color: #4a5368; margin: 26px 0 4px; font-weight: 700; }
+  .model { font-size: 46px; white-space: nowrap; font-weight: 900; color: #191919; letter-spacing: -1px; }
+  .model b { color: #2e5cff; }
+  .sub { font-size: 22px; color: #6b7280; margin-top: 6px; }
+  .dev { display: block; width: 330px; height: 330px; margin: 18px auto 0; mix-blend-mode: multiply; }
+  #hot-b { width: 620px; padding: 40px 44px; }
+  #hot-b h2 { font-size: 34px; margin: 0 0 26px; color: #191919; }
+  .step { display: flex; gap: 18px; align-items: flex-start; padding: 16px 0; border-top: 2px solid #eef0f4; }
+  .step:first-of-type { border-top: 0; }
+  .step i { flex: none; width: 46px; height: 46px; border-radius: 50%; background: #2e5cff; color: #fff; font-style: normal; font-weight: 700; font-size: 22px; display: grid; place-items: center; }
+  .step div { font-size: 26px; color: #191919; font-weight: 700; line-height: 1.35; }
+  .step small { display: block; font-size: 20px; color: #6b7280; font-weight: 500; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card" id="hot-a">
+    <span class="who">헬스케어 연동 기기</span>
+    <div class="brand">셀바스헬스케어 · ACCUNIQ</div>
+    <div class="model">ACCUNIQ <b>BC380 PLUS</b></div>
+    <div class="sub">체성분 측정기</div>
+    <img class="dev" src="bc380.jpg" alt="ACCUNIQ BC380 PLUS">
+  </div>
+  <div class="card" id="hot-b">
+    <h2>이렇게 연결돼요</h2>
+    <div class="step"><i>1</i><div>BC380 PLUS 측정기 구매<small>헬스케어 연동은 이 측정기가 있어야 돼요</small></div></div>
+    <div class="step"><i>2</i><div>도장에 두고 태권월드 도장과 연결<small>수련생이 측정기에 올라가 재기만 하면 돼요</small></div></div>
+    <div class="step"><i>3</i><div>결과가 태권월드로 자동으로<small>관장님은 웹에서, 학부모님은 앱에서 확인</small></div></div>
+  </div>
+</div>
+</body>
+</html>
