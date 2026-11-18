@@ -3,18 +3,23 @@
   python run.py 영상.mp4
   python run.py 영상.mp4 --no-illust --allow "홍길동,내채널"
   python run.py --rerender output/영상_20261005_120000     # edit_plan.json 수정 후 최종본만 다시
+  python run.py --shorts output/영상_20261005_120000       # 쇼츠(세로)만 다시 만들기
 """
 import argparse
 from pathlib import Path
 
-from autoedit.config import Settings
+from autoedit.config import Settings, load_dotenv
+from autoedit.llm import LLM
 from autoedit.pipeline import render_from_plan, run
+from autoedit.shorts import make_shorts
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description="유튜브 영상 자동 편집기")
     p.add_argument("video", nargs="?", help="편집할 영상 파일")
     p.add_argument("--rerender", metavar="WORK_DIR", help="edit_plan.json 기준으로 최종본만 다시 렌더링")
+    p.add_argument("--shorts", metavar="WORK_DIR", help="편집이 끝난 폴더에서 쇼츠(세로 9:16)만 다시 만들기")
+    p.add_argument("--no-shorts", action="store_true", help="쇼츠(세로) 만들기 끄기")
     p.add_argument("--no-cut", action="store_true", help="컷 편집 끄기")
     p.add_argument("--no-illust", action="store_true", help="설명 일러스트 끄기")
     p.add_argument("--no-privacy", action="store_true", help="개인정보 처리 끄기")
@@ -36,6 +41,10 @@ def main() -> None:
     if a.rerender:
         print(render_from_plan(Path(a.rerender)))
         return
+    if a.shorts:
+        load_dotenv()
+        print(make_shorts(Path(a.shorts), LLM(Settings.model)))
+        return
     if not a.video:
         p.error("영상 파일을 지정하거나 --rerender 를 사용하세요.")
 
@@ -54,6 +63,7 @@ def main() -> None:
         vocabulary=[x.strip() for x in a.terms.split(",") if x.strip()],
         transcript_correction=not a.no_correct,
         illustration_engine=a.engine,
+        shorts_enabled=not a.no_shorts,
     )
     run(a.video, s)
 

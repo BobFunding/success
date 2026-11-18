@@ -16,6 +16,7 @@
 3. **개인정보**: 화면은 EasyOCR + 정규식 + Claude 판단으로 찾아 모자이크하고, 음성은 대본에서 찾아 삐- 처리합니다.
 4. **설명 일러스트**: Claude가 삽입 지점을 기획하고, 플랫 벡터 + 핸드드로잉 카툰 스타일 SVG를 그린 뒤 resvg로 PNG를 만듭니다.
 5. **최종 합성**: ffmpeg 필터 그래프 하나로 모자이크, 삐-, 일러스트·스티커, 자막(번역 자막 포함)을 합쳐 `2_final.mp4` 를 만듭니다.
+6. **세로 쇼츠**: 하이라이트 30~60초를 골라 세로(9:16) `3_shorts.mp4` 를 만듭니다. 실패해도 본편은 그대로 둡니다.
 
 ## 구조
 
@@ -32,6 +33,8 @@ autoedit/
   illustrate.py      일러스트 기획 / (claude-svg 엔진) SVG 생성·렌더 검수 / 카드 배치
   imagegen.py        (gpt 엔진, 기본값) GPT 이미지 병렬 생성 → 손그림 카드/설명 화면으로 합성, 라벨은 직접 그림
   translate.py       번역 자막 (외국어 문장 → 한국어, translations.json)
+  shorts.py          세로 쇼츠(9:16): 하이라이트 구간 고르기(Claude/규칙) → 같은 모자이크·삐- 적용 → 얼굴 따라 자르기(crop)
+                     또는 흐린 배경 위 원본(fit) + 위 제목·아래 큰 자막 → 3_shorts.mp4, shorts.json
   render.py          최종 ffmpeg 합성 (모자이크·삐-·일러스트·스티커·ASS 자막)
   screenfx.py        화면 녹화 편집 (Screen Studio 스타일: 배경 프레임·자동 줌·클릭 효과·대기 구간 빨리 감기).
                      pipeline 과 완전히 별개 — 다른 모듈을 고치거나 부르지 않음
@@ -72,6 +75,7 @@ tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·A
 - 필러 규칙(`cutter.STRONG_FILLER`)은 한국어("어", "음")와 영어("um", "uh", "hmm")를 함께 봅니다.
 - Whisper는 필러를 생략하는 경향이 있어 `FILLER_PROMPT` 로 받아적게 유도합니다. `vad_filter` 를 켜면 필러가 사라집니다.
 - OCR 재사용 판정은 평균 차이가 아니라 **바뀐 픽셀 비율**로 해야 작은 알림 글자도 잡힙니다.
+- OpenCV 5.x 에는 얼굴 찾기(`CascadeClassifier`)가 없습니다. 쇼츠 얼굴 따라가기를 위해 `opencv-python-headless<5` 로 고정했고, 없으면 흐린 배경 방식으로 대신합니다.
 - 모자이크 블록은 고정 크기면 큰 글자가 읽힙니다. 글자 높이 기준 세로 3칸 이하로 뭉갭니다.
 - Whisper의 `hotwords` 나 `initial_prompt` 로는 발음이 바뀌는 단어("단리"→[달리])를 바로잡지 못합니다. 그래서 `correct.py` 가 받아쓰기 뒤에 교정합니다. 교정은 단어 수와 타임스탬프를 바꾸면 안 됩니다(컷·삐-·자막이 모두 단어 시간 기준).
 - Windows 음성합성(SAPI)으로 테스트 음성을 만들 때는 PromptBuilder에 `ko-KR` 문화권을 지정해야 한글을 읽습니다.

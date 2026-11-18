@@ -15,6 +15,7 @@ from .illustrate import make_illustrations, place_cards
 from .llm import LLM
 from .privacy import detect_screen_pii, detect_spoken_pii, regex_pii
 from .render import render_final
+from .shorts import make_shorts
 from .translate import translate_sentences
 from .transcribe import Word, group_sentences, transcribe
 
@@ -250,6 +251,13 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
     plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
     final = render_from_plan(work, log)
 
+    # ── 6. 쇼츠(세로) ── 실패해도 본편은 그대로 두고 리포트에 남긴다
+    if settings.shorts_enabled and cut_words:
+        try:
+            make_shorts(work, llm, log)
+        except Exception as e:
+            log(f"[쇼츠] 만들지 못했습니다(본편은 정상): {e}")
+
     write_report(work, video, info.duration, cut_info.duration, words, cut_idx, segments, plan, time.time() - t0,
                  fixes)
     log(f"[완료] {final}  (총 {time.time() - t0:.0f}초)")
@@ -287,7 +295,16 @@ def write_report(work: Path, video: Path, before: float, after: float, words: li
          "- `1_cut.mp4` — 1차 컷 편집본 (무음·필러 제거만)",
          "- `2_final.mp4` — 일러스트 + 모자이크까지 적용된 최종본",
          "- `subtitles.srt` — 컷 편집본 기준 자막",
-         "- `edit_plan.json` — 모자이크/삐-/일러스트 목록. 고친 뒤 `python run.py --rerender <이 폴더>` 로 다시 렌더링", ""]
+         "- `edit_plan.json` — 모자이크/삐-/일러스트 목록. 고친 뒤 `python run.py --rerender <이 폴더>` 로 다시 렌더링"]
+    shorts = work / "shorts.json"
+    if shorts.exists():
+        sh = json.loads(shorts.read_text(encoding="utf-8"))
+        L += ["- `3_shorts.mp4` — 세로 쇼츠(9:16). 다시 만들려면 `python run.py --shorts <이 폴더>`", "",
+              "## 쇼츠 (세로 9:16)", "",
+              f"- 구간: {_fmt(sh['start'])}~{_fmt(sh['end'])} ({sh['duration']:.0f}초) / 제목: \"{sh['title']}\"",
+              f"- 고른 이유: {sh['reason']} ({'Claude' if sh['picked_by'] == 'claude' else '규칙'})",
+              f"- 화면: {'얼굴을 따라 세로로 자름' if sh['mode'] == 'crop' else '흐린 배경 위에 원본을 얹음'}"]
+    L += [""]
 
     L += ["## 설명 일러스트 (최종본 시간 기준)", ""]
     for i in plan["inserts"]:

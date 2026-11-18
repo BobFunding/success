@@ -301,3 +301,9 @@
 4. 썸네일 자동 후보 3장
 5. 소리 다듬기(잡음 제거, -14 LUFS, 배경음악 덕킹)
 작은 개선: 웹 화면에 숨은 설정 꺼내기(받아쓰기 교정, ko+en, 번역 자막, 자막 입히기·크기)
+
+### 2026-11-18 · 1번 편집기 업그레이드: 세로 쇼츠 자동 생성 (제출용, 사용자 선택)
+- `autoedit/shorts.py` 새로: 하이라이트 30~60초(Claude ShortsPick / 규칙: 촘촘함 + 인사말 시작·맺음말 끝 감점, 영상이 짧으면 통째) → 구간 잘라 `render_final` 로 같은 모자이크·삐- → 얼굴(Haar) 따라 crop(경로 데드존·smoothstep) 또는 fit(흐린 배경) → 1080x1920 + 위 제목(노란 상자)·아래 큰 자막(가린 대본, 14자) → `3_shorts.mp4`, `shorts.json`, report.md 절.
+- 연결: Settings.shorts_enabled/min/max, pipeline 6단계(실패해도 본편 유지), run.py `--shorts <폴더>`·`--no-shorts`, app.py 체크박스 + '세로 쇼츠 (9:16)' 결과 칸. 테스트 `tests/test_shorts.py` 14개(편집기 쪽 84개 통과).
+- 확인(클라우드 Linux, Claude 키 없이 규칙 선택): 시험 재료 = edge-tts 목소리 65초 + 공개 사진(아인슈타인, 위키미디어 공용) 얼굴이 움직이는 영상 / 화면 녹화 같은 영상, 전화번호 글자 모자이크·말 삐-. 얼굴 crop: 얼굴이 계속 가운데, 제목·자막 정상, 삐- 1kHz 확인(-36dB vs -52dB). fit: 모자이크 유지. 웹 화면 체크박스·결과 칸 화면 확인.
+- 함정: opencv 5.x 는 CascadeClassifier 없음 → requirements 에 `<5` 고정. 못 한 것: 실제 Claude 키로 구간·제목 선택, Whisper 받아쓰기부터 웹 화면 전체 흐름(이 컨테이너에 faster-whisper 없음), Windows 맑은 고딕 렌더.

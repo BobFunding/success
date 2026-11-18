@@ -69,6 +69,11 @@ class Settings:
     subtitle_size: float = 0.055       # 글자 높이 = 영상 높이 × 이 값
     subtitle_translate: str = ""       # "ko" 면 외국어 문장을 한국어로 번역해 크게 띄우고 원문은 아래 작게
 
+    # ── 쇼츠(세로 9:16) ──
+    shorts_enabled: bool = True        # 편집이 끝나면 하이라이트 30~60초를 골라 세로 쇼츠(3_shorts.mp4)도 만듦
+    shorts_min: float = 30.0           # 쇼츠 최소 길이(초)
+    shorts_max: float = 60.0           # 쇼츠 최대 길이(초)
+
     # ── 출력 / 모델 ──
     model: str = "claude-opus-5-5"
     quality_cq: int = 19               # 낮을수록 고화질 (NVENC cq / x264 crf)
