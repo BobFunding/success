@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>학부모님 휴대폰</title>
+<!-- 7편 녹화용: 학부모님 휴대폰에서 보이는 화면(사용자가 준 캡처, 링크·인증번호·이름은 흐림)을 휴대폰 틀 안에 차례로 보여 준다.
+     녹화기가 show(n) 으로 넘긴다. 밝게 할 자리는 #hot-* (휴대폰 화면 기준 비율 위치). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@500;700&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #eef1f8; font-family: "Noto Sans KR", "WenQuanYi Zen Hei", sans-serif; overflow: hidden; }
+  .stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 90px; }
+  .side { width: 520px; }
+  .side .who { display: inline-block; background: #2e5cff; color: #fff; font-weight: 700; font-size: 22px; padding: 8px 18px; border-radius: 999px; }
+  .side h1 { font-size: 46px; line-height: 1.3; margin: 22px 0 18px; color: #191919; }
+  .steps { list-style: none; padding: 0; margin: 0; }
+  .steps li { font-size: 26px; color: #9aa3b5; padding: 12px 0; display: flex; gap: 14px; align-items: center; }
+  .steps li b { width: 40px; height: 40px; border-radius: 50%; background: #dfe4ef; color: #fff; display: grid; place-items: center; font-size: 20px; }
+  .steps li.on { color: #191919; font-weight: 700; }
+  .steps li.on b { background: #2e5cff; }
+  .steps li.done { color: #4a5368; }
+  .steps li.done b { background: #36bd44; }
+  .phone { position: relative; width: 430px; height: 900px; border-radius: 58px; background: #111; padding: 16px; box-shadow: 0 30px 70px rgba(20, 30, 70, .28); }
+  .phone::before { content: ""; position: absolute; top: 26px; left: 50%; transform: translateX(-50%); width: 110px; height: 28px; background: #000; border-radius: 20px; z-index: 5; }
+  .screen { position: relative; width: 100%; height: 100%; border-radius: 44px; overflow: hidden; background: #1e1e1e; }
+  .screen img { position: absolute; left: 0; width: 100%; opacity: 0; transition: opacity .45s ease; }
+  .screen img.on { opacity: 1; }
+  #s1 { top: 120px; }            /* 문자: 위쪽에 여백(문자 앱 머리) */
+  #s2, #s3, #s4 { top: 0; height: 100%; object-fit: cover; object-position: top; }
+  .bar { position: absolute; top: 0; left: 0; right: 0; height: 110px; background: #1e1e1e; color: #ddd; font-size: 20px; padding: 62px 26px 0; z-index: 2; }
+  .bar.light { display: none; }
+  .hot { position: absolute; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="side">
+    <span class="who">학부모님 휴대폰</span>
+    <h1 id="title">초대장 문자가 와요</h1>
+    <ol class="steps" id="steps">
+      <li><b>1</b>문자 속 링크 누르기</li>
+      <li><b>2</b>초대 내용 보고 수락</li>
+      <li><b>3</b>휴대폰 인증하고 완료</li>
+      <li><b>4</b>앱에서 우리 아이 보기</li>
+    </ol>
+  </div>
+  <div class="phone"><div class="screen" id="screen">
+    <div class="bar" id="bar">‹ &nbsp; 태권월드 태권도장</div>
+    <img id="s1" src="1_sms.jpg" alt="초대장 문자">
+    <img id="s2" src="2_invite.jpg" alt="초대 화면">
+    <img id="s3" src="3_done.jpg" alt="수락 완료">
+    <img id="s4" src="4_app.jpg" alt="태권월드 앱">
+    <div class="hot" id="hot-1"></div><div class="hot" id="hot-2"></div><div class="hot" id="hot-3"></div><div class="hot" id="hot-4"></div>
+  </div></div>
+</div>
+<script>
+const titles = ["초대장 문자가 와요", "수락을 눌러요", "인증하면 수락 완료", "앱에서 바로 확인"];
+// 밝게 할 자리(휴대폰 화면 안, 비율): 링크 / 수락 버튼 / 완료 문구 / 메뉴
+const hots = { 1: [0.03, 0.37, 0.70, 0.10], 2: [0.24, 0.34, 0.27, 0.065], 3: [0.12, 0.05, 0.76, 0.30], 4: [0.06, 0.32, 0.88, 0.34] };
+function place() {
+  const sc = document.getElementById('screen').getBoundingClientRect();
+  for (const [k, [x, y, w, h]] of Object.entries(hots)) {
+    const e = document.getElementById('hot-' + k);
+    Object.assign(e.style, { left: (x * sc.width) + 'px', top: (y * sc.height) + 'px', width: (w * sc.width) + 'px', height: (h * sc.height) + 'px' });
+  }
+}
+function show(n) {
+  for (let i = 1; i <= 4; i++) document.getElementById('s' + i).classList.toggle('on', i === n);
+  document.getElementById('bar').style.display = n === 1 ? 'block' : 'none';
+  document.getElementById('title').textContent = titles[n - 1];
+  [...document.getElementById('steps').children].forEach((li, i) => { li.className = i + 1 < n ? 'done' : i + 1 === n ? 'on' : ''; });
+}
+window.addEventListener('load', () => { place(); show(1); });
+</script>
+</body>
+</html>

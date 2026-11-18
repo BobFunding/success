@@ -1,0 +1,119 @@
+"""튜토리얼 메이커 명령행. 보통은 화면으로 씁니다: python tutorial.py ui (튜토리얼.bat 이 이걸 띄움)
+
+python tutorial.py ui                                            # 화면 열기
+python tutorial.py make tutorials/ep1/scenario.yaml              # 처음부터 끝까지
+python tutorial.py make tutorials/ep1/scenario.yaml --only 편집  # 일부 단계만 (목소리, 리허설, 녹화, 편집)
+python tutorial.py check tutorials/ep1/scenario.yaml             # 장면 표 검사 + 리허설
+python tutorial.py demo https://example.com --topic "회원가입"   # 한 번 해 보이기 → 장면 표
+python tutorial.py repro                                         # 1편 재현 검사(Linux)
+python tutorial.py selfcheck [--ep1]                             # 자가 점검(이 PC에서 제대로 도는지)
+"""
+import argparse
+import sys
+from pathlib import Path
+
+for _s in (sys.stdout, sys.stderr):        # Windows 명령창(cp949)에서 한글·기호가 깨지거나 멈추지 않게
+    try:
+        _s.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+from autoedit.tutorial import maker, scenario
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="웹사이트 사용법 영상 만들기")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    m = sub.add_parser("make", help="만들기")
+    m.add_argument("scenario")
+    m.add_argument("--work", help="작업 폴더 (기본: output/tutorial/<파일이름>)")
+    m.add_argument("--only", nargs="+", choices=maker.STAGES, help="이 단계만")
+    m.add_argument("--fast", action="store_true", help="1080p 사본 생략")
+    c = sub.add_parser("check", help="장면 표 검사 + 리허설")
+    c.add_argument("scenario")
+    c.add_argument("--work")
+    d = sub.add_parser("demo", help="한 번 해 보이기: 브라우저에서 한 번 하면 장면 표를 만든다")
+    d.add_argument("url")
+    d.add_argument("--topic", default="", help="영상 주제 (비우면 자동)")
+    d.add_argument("--brand", default="", help="브랜드 이름 (presets/brands)")
+    d.add_argument("--tone", default="차분", choices=("차분", "친근", "전문"))
+    d.add_argument("--next", default="", help="다음 편 주제")
+    d.add_argument("--out", default="", help="장면 표 파일 (기본: output/tutorial/<주제>/scenario.yaml)")
+    u = sub.add_parser("ui", help="화면 열기 (PC 안에서만 열림)")
+    u.add_argument("--port", type=int, default=8770)
+    u.add_argument("--no-browser", action="store_true")
+    r = sub.add_parser("repro", help="1편 재현 검사")
+    r.add_argument("--work", default="output/repro")
+    r.add_argument("--only", nargs="+", choices=("기준", "같은녹화", "프로그램", "비교"))
+    x = sub.add_parser("export", help="내보내기: 올릴 곳별 파일·글 + 규격 검사")
+    x.add_argument("scenario")
+    x.add_argument("--work")
+    x.add_argument("--to", nargs="+", default=["youtube", "web"], help="올릴 곳 (all 이면 설명서까지 전부)")
+    x.add_argument("--site", default="", help="링크 주소 (기본: 장면 표의 사이트)")
+    x.add_argument("--vertical", default="따라가기", choices=("따라가기", "전체"),
+                   help="세로 영상: 누르는 곳을 따라가며 확대(기본) / 가로 화면 전체를 줄여 넣기")
+    k = sub.add_parser("selfcheck", help="자가 점검: 이 PC에서 제대로 도는지(부품 → 짧은 영상 → --ep1 이면 1편 재현)")
+    k.add_argument("--ep1", action="store_true", help="1편까지 만들어 기준 기록과 비교(오래 걸림, 인터넷 필요)")
+    a = ap.parse_args()
+
+    if a.cmd == "ui":
+        from autoedit.tutorial.server import serve
+        serve(a.port, not a.no_browser)
+        return 0
+    if a.cmd == "demo":
+        from autoedit.tutorial.demo_record import DemoSession, save
+        sess = DemoSession(a.url)
+        input("뜬 브라우저에서 평소처럼 한 번 해 보세요. 화면은 찍지 않고 동작만 기록해요.\n다 하셨으면 여기서 Enter 를 눌러 주세요(■ 끝). ")
+        try:
+            sc = sess.finish(topic=a.topic, brand=a.brand, tone=a.tone, next_topic=a.next)
+        except ValueError as e:
+            print(e)
+            return 1
+        out = Path(a.out or f"output/tutorial/{sc['파일이름']}/scenario.yaml")
+        save(sc, out)
+        print(f"장면 {len(sc['장면'])}개를 만들었어요: {out}\n'말'을 다듬은 뒤: python tutorial.py make {out}")
+        return 0
+    if a.cmd == "selfcheck":
+        from autoedit.tutorial import selfcheck
+        rep = selfcheck.run(full=a.ep1, on_stage=lambda n: print(f"── {n}", flush=True))
+        print(rep["글"])
+        print("\n결과 파일: output/자가점검/자가점검결과.md (그대로 복사해 보내 주세요)")
+        return 0 if rep["판정"] == "ok" else 1
+    if a.cmd == "repro":
+        from autoedit.tutorial import repro
+        return 0 if repro.main(Path(a.work), a.only) else 1
+    try:
+        sc = scenario.load(a.scenario)
+    except scenario.ScenarioError as e:
+        print(f"장면 표 오류: {e}")
+        return 1
+    work = Path(a.work or f"output/tutorial/{sc.file_name}")
+    from autoedit.tutorial.capture import CaptureUnavailable
+    from autoedit.tutorial.recorder import SceneError
+    if a.cmd == "export":
+        from autoedit.tutorial.export import Exporter, load_platforms
+        dests = list(load_platforms()["올릴곳"]) if a.to == ["all"] else a.to
+        try:
+            rep = Exporter(sc, work, site=a.site, vertical=a.vertical).export(dests, on_stage=lambda n: print(f"── {n}"))
+        except ValueError as e:
+            print(e)
+            return 1
+        print(f"{'규격 검사 통과' if rep['판정'] == 'ok' else '확인이 필요해요'}: {rep['폴더']} (점검.md)")
+        return 0 if rep["판정"] == "ok" else 1
+    try:
+        if a.cmd == "check":
+            maker.make(sc, work, stages=("목소리", "리허설"))
+            print("리허설 통과: 모든 누를 곳을 찾았어요.")
+            return 0
+        res = maker.make(sc, work, stages=a.only or maker.STAGES, fast=a.fast,
+                         on_stage=lambda n, est=None: print(f"── {n}" + (f" (전체 예상 약 {sum(est.values()) / 60:.0f}분)" if est and n == "리허설" else "")))
+    except (SceneError, CaptureUnavailable) as e:      # 사람 말로, 그 자리에
+        print(f"멈췄어요: {e}")
+        return 1
+    if res:
+        print(f"완성: {res['final']}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

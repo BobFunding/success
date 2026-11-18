@@ -5,7 +5,10 @@ anthropic
 openai
 pydantic
 easyocr
-opencv-python-headless
+opencv-python-headless<5   # 5.x 에는 얼굴 찾기(CascadeClassifier)가 없어 쇼츠 얼굴 따라가기가 안 됨
 resvg-py
 gradio
 numpy
+google-auth
+google-auth-oauthlib
+requests

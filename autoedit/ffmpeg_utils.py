@@ -93,10 +93,11 @@ def has_nvenc() -> bool:
         return False
 
 
-def video_encoder_args(cq: int) -> list[str]:
+def video_encoder_args(cq: int, x264_preset: str = "medium") -> list[str]:
     if has_nvenc():
         return ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", str(cq), "-b:v", "0", "-pix_fmt", "yuv420p"]
-    return ["-c:v", "libx264", "-preset", "medium", "-crf", str(cq), "-pix_fmt", "yuv420p"]
+    # GPU 가 없을 때. 4K 를 CPU 로 뽑으면 medium 은 매우 느리므로 veryfast 등으로 낮출 수 있다
+    return ["-c:v", "libx264", "-preset", x264_preset, "-crf", str(cq), "-pix_fmt", "yuv420p"]
 
 
 def run_ffmpeg(args: list[str], log=print) -> None:

@@ -1,0 +1,108 @@
+<div class="wrap">
+  <header class="top">
+    <h1>태권월드 유튜브 업로드 표</h1>
+    <p class="lede">28편을 올릴 때 복사해서 붙여 넣기만 하면 되도록 정리했어요. 제목은 검색어부터, 설명 첫 두 줄은 AI가 그대로 인용할 수 있는 답, 모든 영상은 태권월드 홈페이지와 사용자 가이드로 연결돼요.</p>
+    <div class="progress"><div class="bar" aria-hidden="true"><i id="barFill"></i></div><span class="count" id="count">0 / 28편 올림</span></div>
+    <ol class="steps">
+      <li>채널 정보를 한 번만 채워요 (아래 1번)</li>
+      <li>재생목록 10개를 먼저 만들어요 (2번)</li>
+      <li>편마다 영상·자막을 올리고 칸을 복사해요 (3번)</li>
+      <li>고정 댓글을 달고 '올림'에 체크해요</li>
+    </ol>
+  </header>
+
+  <section id="channel">
+    <div class="sec-head"><h2>1. 채널 설정 (한 번만)</h2><p>YouTube 스튜디오 → 맞춤설정 → 기본 정보</p></div>
+    <div class="panel" id="channelPanel"></div>
+    <div class="panel">
+      <h3>업로드 기본 설정 <span class="note">(설정 → 업로드 기본설정에 한 번 저장해 두면 편마다 안 바꿔도 돼요)</span></h3>
+      <ul class="settings">
+        <li><b>공개 상태</b>공개 (검색·AI 인용을 받으려면 공개)</li>
+        <li><b>카테고리</b>노하우/스타일</li>
+        <li><b>동영상 언어 · 자막 언어</b>한국어</li>
+        <li><b>시청자층</b><span class="stamp">아니요, 아동용이 아닙니다</span> (관장님 대상)</li>
+        <li><b>퍼가기 허용</b>켜기 (나중에 가이드 페이지에 넣으려면 필수)</li>
+        <li><b>자동 챕터</b>켜기 (설명란 챕터가 우선)</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="playlists">
+    <div class="sec-head"><h2>2. 재생목록 10개</h2><p>전체 1개 + 파트 9개. 영상을 올릴 때 '전체'와 해당 파트 두 곳에 넣어요</p></div>
+    <div class="pl-grid" id="plGrid"></div>
+  </section>
+
+  <section id="episodes">
+    <div class="sec-head"><h2>3. 편별 업로드 (28편)</h2><p>편을 누르면 펼쳐져요. 순서대로 올리면 이전·다음 편 안내가 맞아요</p></div>
+    <div id="epList" class="part"></div>
+  </section>
+
+  <section id="after">
+    <div class="sec-head"><h2>다 올린 뒤에 할 일</h2></div>
+    <div class="panel">
+      <ol class="after">
+        <li>홈페이지 맨 아래와 회사 소개 정보(구조화 데이터 sameAs)에 유튜브 채널 주소를 넣어 달라고 개발자에게 전달해요. 채널과 사이트가 서로를 가리켜야 같은 회사로 묶여요.</li>
+        <li>개발자가 가이드 페이지를 고치면, 페이지마다 해당 영상을 넣고 영상 정보(VideoObject)를 붙여요. 설명란의 '글로 보는 단계별 안내' 주소가 그 페이지예요.</li>
+        <li>네이버 블로그에도 편마다 영상과 요약 글을 올리고 같은 가이드 주소를 달아요.</li>
+        <li>가이드 항목이 없는 편(12~14, 16~19편)은 지금 사용자 가이드 첫 화면으로 연결돼 있어요. 전용 가이드 페이지가 생기면 그 주소로 바꿔요.</li>
+      </ol>
+    </div>
+  </section>
+</div>
+<script>
+const DATA = __DATA__;
+const KEY = "tw_yt_done_v1";
+function load(){ try { return JSON.parse(localStorage.getItem(KEY) || "{}"); } catch(e){ return {}; } }
+function save(v){ try { localStorage.setItem(KEY, JSON.stringify(v)); } catch(e){} }
+let done = load();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function field(label, text, limit, one){
+  const lim = limit ? `<span class="len">${[...text].length} / ${limit}자</span>` : "";
+  return `<div class="field"><div class="field-top"><span class="label">${label}</span><span style="display:flex;gap:8px;align-items:center">${lim}<button class="copy" type="button">복사</button></span></div><pre class="val${one?" one":""}">${esc(text)}</pre></div>`;
+}
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("button.copy"); if (!b) return;
+  const pre = b.closest(".field").querySelector("pre");
+  const text = pre.textContent;
+  const ok = () => { b.textContent = "복사됨"; b.classList.add("done"); setTimeout(() => { b.textContent = "복사"; b.classList.remove("done"); }, 1600); };
+  try { await navigator.clipboard.writeText(text); ok(); }
+  catch(e){ const r = document.createRange(); r.selectNodeContents(pre); const s = getSelection(); s.removeAllRanges(); s.addRange(r); b.textContent = "Ctrl+C 로 복사"; }
+});
+// 1. 채널
+const ch = DATA.channel;
+document.getElementById("channelPanel").innerHTML =
+  field("채널 이름", ch.name, 0, true) + field("핸들", ch.handle, 0, true) +
+  field("채널 설명", ch.about, 1000) + field("채널 키워드 (설정 → 채널)", ch.keywords, 0, true) +
+  field("링크 (맞춤설정 → 기본 정보 → 링크)", ch.links.map(l => l[0] + "  " + l[1]).join("\n"));
+// 2. 재생목록
+document.getElementById("plGrid").innerHTML = DATA.playlists.map(p =>
+  `<div class="panel">${field("재생목록 이름", p.name, 150, true)}${field("재생목록 설명", p.desc, 5000)}<p class="pl-eps">${p.eps.length === 28 ? "1~28편 전체" : p.eps.map(n => n + "편").join(" · ")}</p></div>`).join("");
+// 3. 편별
+const list = document.getElementById("epList");
+let html = "", lastPart = 0;
+for (const e of DATA.eps){
+  if (e.part !== lastPart){ html += `<div class="part-name">${esc(e.partName)}</div>`; lastPart = e.part; }
+  html += `<details class="ep" id="ep${e.n}" data-n="${e.n}">
+    <summary><span class="no">${String(e.n).padStart(2,"0")}편</span>
+      <span class="sum-title">${esc(e.title.split(" | ")[0])}<br><span class="sum-meta">${e.len} · ${e.steps.map(esc).join(" → ")}</span></span>
+      <span class="done-box"><input type="checkbox" id="done${e.n}" data-n="${e.n}" aria-label="${e.n}편 올림"> 올림</span></summary>
+    <div class="ep-body">
+      <ul class="todo"><li>영상 파일: 보내 드린 '태권월드_${e.n}편_…' mp4</li><li>자막: 같은 이름의 .srt 를 한국어 자막으로 올리기</li><li>재생목록: '태권월드 사용법 전체'와 '태권월드 사용법 ${esc(e.partName)}'</li><li>올린 뒤 아래 고정 댓글을 달고 '고정'</li></ul>
+      ${field("제목", e.title, 100, true)}
+      ${field("설명", e.desc, 5000)}
+      ${field("태그", e.tags, 500, true)}
+      ${field("고정 댓글", e.pin)}
+      <p class="note">설명란 안내 주소: <a href="${esc(e.guide)}" target="_blank" rel="noopener">${esc(e.guide)}</a></p>
+    </div></details>`;
+}
+list.innerHTML = html;
+function paint(){
+  let c = 0;
+  for (const e of DATA.eps){ const on = !!done[e.n]; c += on; document.getElementById("done"+e.n).checked = on; document.getElementById("ep"+e.n).classList.toggle("up", on); }
+  document.getElementById("count").textContent = c + " / 28편 올림";
+  document.getElementById("barFill").style.width = (c / 28 * 100) + "%";
+}
+list.addEventListener("click", ev => { if (ev.target.closest(".done-box")) ev.stopPropagation(); });
+list.addEventListener("change", ev => { const n = ev.target.dataset.n; if (!n) return; done[n] = ev.target.checked; save(done); paint(); });
+paint();
+</script>

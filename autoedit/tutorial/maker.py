@@ -1,0 +1,203 @@
+"""만들기 전체 순서: 목소리 → 리허설 → 자동 녹화 → 동기 맞추기 → 편집·출력. 단계마다 중간 결과를 작업 폴더에 남긴다."""
+from __future__ import annotations
+
+import json
+import os
+from dataclasses import asdict
+from pathlib import Path
+
+from .capture import find_sync
+from .compose import Composer
+from .recorder import Recorder
+from .scenario import Scenario
+
+STAGES = ("목소리", "리허설", "녹화", "편집")
+
+
+def narrate(sc: Scenario, work: Path, log=print) -> dict:
+    """문장별 나레이션 → narration.json {키: [문장, wav, 길이]}.
+    문장·목소리가 그대로면 만든 소리를 다시 쓰고, 바뀌었으면 새로 만든다.
+    목소리는 AI 목소리·자막만·내 목소리·유료 API 중 하나(voices.py) — 그 뒤 단계는 종류를 모른다."""
+    from .. import narration as N
+    from . import voices as V
+    out, meta_p = work / "narration.json", work / "narration_voice.json"
+    meta = V.fingerprint(sc.brand.voice, sc.brand.voice_rate, work)
+    if out.exists():
+        nar = json.loads(out.read_text(encoding="utf-8"))
+        same_text = {k: v[0] for k, v in nar.items()} == {l.key: l.text for l in sc.lines()}
+        same_voice = not meta_p.exists() or json.loads(meta_p.read_text()) == meta
+        if same_text and same_voice and all(Path(v[1]).exists() for v in nar.values()):
+            return nar
+    lines = [N.Line(l.key, l.text, l.rate, l.pitch) for l in sc.lines()]
+    V.synthesize(lines, work, (work / "narration").resolve(), sc.brand.voice, sc.brand.voice_rate, log=log)
+    nar = {l.key: [l.text, l.path, l.duration] for l in lines}
+    out.write_text(json.dumps(nar, ensure_ascii=False, indent=1), encoding="utf-8")
+    meta_p.write_text(json.dumps(meta))
+    return nar
+
+
+def recording_key(sc: Scenario, dur: dict) -> str:
+    """녹화에 영향을 주는 것(장면·문장 길이·주소·흐림·차단·녹화 방식)이 같으면 이미 찍은 녹화를 다시 쓴다."""
+    from .capture import capture_method
+    return json.dumps([sc.url, [asdict(s) for s in sc.pre_scenes + sc.scenes], sc.login_url, sc.done_url, {k: round(v, 3) for k, v in dur.items()},
+                       sc.privacy_fields, sc.block_list, sc.close_popups, sc.end_hold, capture_method()],
+                      ensure_ascii=False, sort_keys=True, default=str)
+
+
+def estimate(sc: Scenario, dur: dict, stages=STAGES, reuse_rec: bool = False, preview: bool = False,
+             pron: bool = True) -> dict[str, float]:
+    """단계별 예상 시간(초). 4코어 PC 기준 실측에서 잡은 대략값 — 화면에는 '약 N분' 으로만 보인다."""
+    from .capture import capture_method
+    body = sum(dur.get(s.key, 3) + s.gap for s in sc.scenes) + 2
+    total = body + sum(dur.get(l.key, 3) for l in sc.intro + sc.outro) + 6
+    k = 6 if capture_method() == "frames" else 1
+    est = {"목소리": 15, "발음 검사": (60 + 4 * len(dur)) if pron else 0, "리허설": 0 if reuse_rec else body * 1.1,
+           "녹화": 0 if reuse_rec else body * (1.4 * k if k > 1 else 1.1) + 10,
+           "화면 연출": body * (0.8 if preview else 8), "인트로·아웃트로·자막": 70, "출력": total * (0.5 if preview else 3),
+           "자동 검수": 0 if preview else total * 2.5}
+    keep = {"목소리": "목소리", "발음 검사": "목소리", "리허설": "리허설", "녹화": "녹화"}
+    return {n: v for n, v in est.items() if keep.get(n, "편집") in stages and v}
+
+
+MOVED_PX = 24     # 녹화 픽셀 기준(리허설과 녹화는 보통 5px 안에서 같음)
+
+
+def site_changes(work: Path) -> list[dict]:
+    """사이트 변경 감지: 방금 리허설에서 누른 자리와 지난 녹화에서 누른 자리를 장면마다 비교한다.
+    누른 횟수가 다르거나 MOVED_PX 넘게 옮겨졌으면 '바뀐 장면'."""
+    try:
+        a = json.loads((work / "log_dry.json").read_text(encoding="utf-8"))
+        b = json.loads((work / "log_rec.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    def per_scene(log):
+        lines = [(ln["key"], ln["t"]) for ln in log["lines"]] + [("", float("inf"))]
+        return {k: [(c["x"], c["y"]) for c in log["clicks"] if t <= c["t"] < lines[i + 1][1]] for i, (k, t) in enumerate(lines[:-1])}
+    pa, pb = per_scene(a), per_scene(b)
+    out = []
+    for k, ca in pa.items():
+        cb = pb.get(k)
+        if cb is None:
+            out.append({"키": k, "이유": "새 장면"}); continue
+        if len(ca) != len(cb):
+            out.append({"키": k, "이유": f"누르는 횟수가 달라짐({len(cb)} → {len(ca)})"}); continue
+        mv = max([max(abs(x[0] - y[0]), abs(x[1] - y[1])) for x, y in zip(ca, cb)] or [0])
+        if mv > MOVED_PX:
+            out.append({"키": k, "이유": f"누를 곳이 옮겨짐({mv:.0f}px)"})
+    return out
+
+
+def rehearse(sc: Scenario, work: Path, dur: dict, log=print) -> dict:
+    """리허설(창 없이, 녹화 없이). 결과를 rehearsal.json 에 남긴다 — 화면은 이걸 읽어 그 장면 줄을 빨갛게 표시한다."""
+    from .recorder import SceneError
+    res = {"ok": True, "장면수": len(sc.scenes)}
+    try:
+        Recorder(sc, dur, log).run("dry", work)
+        ch = site_changes(work) if (work / "cap.mkv.key").exists() else []
+        if ch:                          # 지난 녹화가 지금 사이트와 다름 → 다음 만들기 때 녹화만 새로(목소리·카드는 그대로)
+            (work / "cap.mkv.key").unlink(missing_ok=True)
+            res["바뀐장면"] = ch
+            log(f"[리허설] 지난 녹화 뒤 사이트가 바뀐 장면 {len(ch)}개: " + ", ".join(f"{c['키']}({c['이유']})" for c in ch))
+    except SceneError as e:
+        s = e.scene
+        res = {"ok": False, "장면": s.no, "키": s.key, "대상": s.label or s.target, "말": s.line.text,
+               "메시지": str(e), "사진": str(work / "last_dry.png")}
+        raise
+    finally:
+        (work / "rehearsal.json").write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+    return res
+
+
+CAPTURE_SCALE = {"1440p": 1.5, "4K": 2.0, "8K": 4.0}     # CSS 1920x1080 × 배율 = 찍는 크기(4K 는 3840x2160 그대로)
+
+
+def make(sc: Scenario, work: Path, stages=STAGES, fast: bool = False, log=print, rules: dict | None = None,
+         on_stage=None, subtitles: bool = True, preview: bool = False, check: bool = True, ask=None,
+         allow_real: bool = False, quality: str = "1440p", device: str = "PC") -> dict:
+    """quality(고급): 1440p(기본·1편) / 4K / 8K(실험용, 매우 오래 걸림). 4K·8K 는 늘리지 않고 높은 배율로 찍는다(한 장씩 찍기).
+    device: PC(기본) / 아이폰 / 갤럭시 — 같은 장면 표를 모바일 화면(터치 표시)으로 찍는다(한 장씩 찍기)."""
+    from . import recorder as RC
+    quality = quality if quality in CAPTURE_SCALE else "1440p"
+    device = device if device in RC.DEVICES else "PC"
+    if quality == "1440p" and device == "PC":
+        return _make(sc, work, stages, fast, log, rules, on_stage, subtitles, preview, check, ask, allow_real, quality, device)
+    old = (RC.W, RC.H, RC.SCALE, RC.DEVICE, os.environ.get("TUTORIAL_CAPTURE"))
+    if device != "PC":
+        d = RC.DEVICES[device]
+        RC.W, RC.H = d["viewport"]
+        RC.SCALE = d["scale"] * (CAPTURE_SCALE[quality] / 1.5)
+        RC.DEVICE = device
+        log(f"[기기] {device} 화면({RC.W}×{RC.H})으로 찍어요. 커서 대신 손가락 자리가 보여요.")
+    else:
+        RC.SCALE = CAPTURE_SCALE[quality]
+        log(f"[화질] {quality}: 화면을 {RC.SCALE}배로 찍어요(오래 걸려요).")
+    os.environ["TUTORIAL_CAPTURE"] = "frames"                 # 화면보다 크거나 기기 흉내는 한 장씩 찍기로만
+    try:
+        return _make(sc, work, stages, fast, log, rules, on_stage, subtitles, preview, check, ask, allow_real, quality, device)
+    finally:
+        RC.W, RC.H, RC.SCALE, RC.DEVICE = old[:4]
+        if old[4] is None:
+            os.environ.pop("TUTORIAL_CAPTURE", None)
+        else:
+            os.environ["TUTORIAL_CAPTURE"] = old[4]
+
+
+def _make(sc: Scenario, work: Path, stages, fast, log, rules, on_stage, subtitles, preview, check, ask,
+          allow_real, quality, device="PC") -> dict:
+    """on_stage(이름, 예상초표): 화면에 진행 단계를 알리는 함수. rules 가 없으면 3층 규칙을 읽어 쓴다.
+    preview: 빠른 미리보기(저화질). 같은 장면 표면 녹화는 최종본에서 다시 쓴다.
+    check: 발음 검사·자동 검수를 한다(1편 재현 검사처럼 영상만 필요할 때는 끔)."""
+    from . import qa
+    from . import rules as R
+    from . import voices as V
+    work.mkdir(parents=True, exist_ok=True)
+    if sc.brand.voice == V.SILENT:
+        subtitles = True                                # 목소리 없이 자막만이면 자막은 꼭 넣는다
+    # 1편 기본 ← 내 규칙 ← 참고 영상 스타일(편집 기법만) ← 브랜드 ← 장면 표. 안전 규칙은 잠금
+    rules = rules or R.merged(R.load_user(), getattr(sc, "style_rules", None), sc.brand.rules, sc.rules)
+    warn = R.apply(sc, rules)
+    for w in warn:
+        log(f"[규칙] {w}")
+    stage = on_stage or (lambda name, est=None: None)
+    stage("목소리 만들기")
+    nar = narrate(sc, work, log) if "목소리" in stages else json.loads((work / "narration.json").read_text(encoding="utf-8"))
+    dur = {k: v[2] for k, v in nar.items()}
+    rkey = recording_key(sc, dur) + (f"|{quality}" if quality != "1440p" else "") + (f"|{device}" if device != "PC" else "")
+    if device != "PC":                                  # 내보내기가 모바일 영상인지 알 수 있게
+        (work / "기기.json").write_text(json.dumps({"기기": device}, ensure_ascii=False), encoding="utf-8")
+    kp = work / "cap.mkv.key"
+    reuse = "녹화" in stages and (work / "cap.mkv").exists() and kp.exists() and kp.read_text(encoding="utf-8") == rkey \
+        and (work / "sync.json").exists() and (work / "log_rec.json").exists()
+    est = estimate(sc, dur, stages, reuse, preview, check)
+    if check and "목소리" in stages and sc.brand.voice != V.SILENT:     # 자막만이면 들을 소리가 없음
+        stage("발음 검사", est)
+        qa.pronunciation(sc, nar, work, log=log)
+    if allow_real and any(s.real_save for s in sc.scenes):
+        reuse = False                                   # 실제 저장은 확인받은 이번에만: 녹화를 새로
+    if reuse:
+        log("[녹화] 장면 표가 그대로라 이미 찍은 녹화를 다시 써요")
+    else:
+        if "리허설" in stages:
+            stage("리허설", est)
+            rehearse(sc, work, dur, log)
+        if "녹화" in stages:
+            stage("자동 녹화", est)
+            rec = Recorder(sc, dur, log, ask=ask, allow_real=allow_real).run("rec", work)
+            off = find_sync(work / "cap.mkv", rec["marks"]["sync"])
+            (work / "sync.json").write_text(json.dumps({"offset": off}))
+            kp.write_text(rkey, encoding="utf-8")
+    result = {}
+    if "편집" in stages:
+        result = Composer(sc, work, log, rules=rules, subtitles=subtitles, quality=quality).build(
+            fast=fast, on_stage=lambda n: stage(n, est), preview=preview)
+        result["warnings"] = warn + R.warnings(sc, rules, result["total"])
+        if check and not preview:
+            stage("자동 검수", est)
+            try:
+                result["qa"] = qa.review(sc, work, result, log)
+            except Exception as e:                       # 검수가 실패해도 영상은 이미 완성 — 만들기는 성공
+                log(f"[검수] 자동 검수를 끝내지 못했어요({type(e).__name__}: {e}). 영상은 그대로 쓸 수 있어요.")
+                result["qa"] = {"판정": "warn", "사진": "", "항목": [
+                    {"이름": "자동 검수", "판정": "warn", "내용": f"건너뜀: {type(e).__name__}"}]}
+    return result

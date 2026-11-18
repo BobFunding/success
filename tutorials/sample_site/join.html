@@ -1,0 +1,12 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>회원가입 - 푸른숲 도서관</title><link rel="stylesheet" href="style.css"></head>
+<body><header><a class="logo" href="index.html">푸른숲 도서관</a><nav><a href="search.html">자료 검색</a><a href="join.html">회원가입</a></nav></header>
+<form class="card" onsubmit="location.href='done.html'; return false">
+<h1>회원 정보 입력</h1><p class="sub">별표 칸은 꼭 적어 주세요.</p>
+<div class="field"><label for="name">이름</label><input type="text" id="name" name="user_name" autocomplete="off"></div>
+<div class="field"><label for="email">이메일</label><div class="row"><input type="email" id="email" name="email" autocomplete="off">
+<button type="button" class="btn ghost" id="check" onclick="fetch('api/check?e='+encodeURIComponent(email.value)).then(r=>r.ok&&(hint.textContent='사용할 수 있는 이메일이에요.')).catch(()=>{})">중복 확인</button></div><div class="hint" id="hint"></div></div>
+<div class="field"><label for="pw">비밀번호</label><input type="password" id="pw" name="password"></div>
+<div class="field"><label for="pw2">비밀번호 확인</label><input type="password" id="pw2" name="password2"></div>
+<div class="field"><label for="topic">관심 분야</label><select id="topic" name="topic"><option>고르세요</option><option>소설</option><option>역사</option><option>과학</option><option>어린이</option></select></div>
+<label class="agree"><input type="checkbox" id="agree" name="agree" required> 이용 약관에 동의합니다</label>
+<button type="submit" class="btn primary wide">가입하기</button></form></body></html>

@@ -1,0 +1,540 @@
+<title>튜토리얼 메이커 시안</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 레이아웃: 12칸 격자 — 왼쪽 단계 메뉴 3칸 + 작업 영역 9칸, 간격은 8px 단위(8/16/24/32) */
+:root{
+  --bg:#F3F5FB; --surface:#FFFFFF; --line:#DCE1EF; --fg:#16204A; --muted:#5D6889;
+  --navy:#1B2559; --blue:#405BEA; --blue-soft:#E8ECFD; --red:#CC1424; --sky:#54B4CC;
+  --ok:#1F8A5B; --ok-soft:#E3F4EC; --warn:#A86200; --warn-soft:#FCF0DC;
+  --display:"IBM Plex Sans KR","Noto Sans KR",system-ui,sans-serif;
+  --body:"Noto Sans KR",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  --s1:8px; --s2:16px; --s3:24px; --s4:32px; --r:10px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1330; --surface:#161C40; --line:#2A3366; --fg:#E8ECFA; --muted:#9AA5CC;
+  --navy:#E8ECFA; --blue:#7189FF; --blue-soft:#232C63; --red:#FF5A66; --sky:#6FCBE1;
+  --ok:#4CC88E; --ok-soft:#163A2D; --warn:#F2B04C; --warn-soft:#3A2C12; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1330; --surface:#161C40; --line:#2A3366; --fg:#E8ECFA; --muted:#9AA5CC;
+  --navy:#E8ECFA; --blue:#7189FF; --blue-soft:#232C63; --red:#FF5A66; --sky:#6FCBE1;
+  --ok:#4CC88E; --ok-soft:#163A2D; --warn:#F2B04C; --warn-soft:#3A2C12; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.6;padding-inline:var(--s2);padding-block:var(--s3)}
+.app{max-width:1200px;margin:0 auto;display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--s3)}
+header.top{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:var(--s2);flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#1B2559,#405BEA);display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:700}
+h1{font-family:var(--display);font-size:20px;margin:0;color:var(--navy)}
+.tag{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:2px 10px;background:var(--surface)}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:8px 14px;font:inherit;cursor:pointer}
+.ghost:hover{border-color:var(--blue);color:var(--blue)}
+nav.steps{grid-column:span 3;align-self:start;position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);display:flex;flex-direction:column;gap:4px}
+.step{display:flex;gap:12px;align-items:center;padding:12px 14px;border-radius:var(--r);border:0;background:transparent;color:var(--muted);font:inherit;text-align:left;cursor:pointer}
+.step .n{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:13px;font-family:var(--mono);flex:none}
+.step b{display:block;color:var(--fg);font-weight:500}
+.step small{font-size:12px}
+.step.on{background:var(--surface);box-shadow:0 1px 0 var(--line),0 0 0 1px var(--line)}
+.step.on .n{background:var(--blue);border-color:var(--blue);color:#fff}
+.step.done .n{background:var(--ok-soft);border-color:var(--ok);color:var(--ok)}
+.step:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+main{grid-column:span 9;min-width:0;display:flex;flex-direction:column;gap:var(--s2)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:var(--s3);min-width:0}
+.card h2{font-family:var(--display);font-size:17px;margin:0 0 4px;color:var(--navy);text-wrap:balance}
+.card p.lead{margin:0 0 var(--s2);color:var(--muted);font-size:14px}
+.row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2)}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+input[type=text],select,textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%}
+textarea{resize:vertical;min-height:44px}
+.primary{background:var(--blue);color:#fff;border:0;border-radius:8px;padding:12px 20px;font:inherit;font-weight:500;cursor:pointer}
+.primary:hover{filter:brightness(1.08)}
+.rec{background:var(--red)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:var(--s2);padding-top:var(--s1)}
+.hint{font-size:13px;color:var(--muted)}
+.pane{display:flex;flex-direction:column;gap:var(--s2)}
+/* 녹화 화면 모형 */
+.browser{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--bg)}
+.browser .bar{display:flex;gap:6px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.live{margin-left:auto;color:var(--red);font-weight:700;display:flex;gap:6px;align-items:center}
+.live i{width:8px;height:8px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+@media (prefers-reduced-motion:reduce){.live i{animation:none}.bar-fill{transition:none!important}}
+.site{padding:var(--s3);display:grid;gap:12px;min-height:180px;background:linear-gradient(180deg,var(--bg),var(--surface))}
+.fake{height:12px;border-radius:4px;background:var(--line)}
+.fakebtn{justify-self:end;padding:6px 14px;border-radius:6px;background:var(--blue-soft);color:var(--blue);font-size:13px;position:relative}
+.fakebtn::after{content:"";position:absolute;inset:-6px;border:2px solid var(--red);border-radius:10px;opacity:.7}
+/* 장면 표 */
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:620px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+td.num{font-family:var(--mono);color:var(--muted);width:36px}
+td.say{min-width:240px}
+td.say div{outline:none;border-radius:6px;padding:2px 4px;margin:-2px -4px}
+td.say div:focus{background:var(--blue-soft)}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--blue-soft);color:var(--blue);white-space:nowrap}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.warn{background:var(--warn-soft);color:var(--warn)}
+.chip.blur{background:transparent;border:1px dashed var(--muted);color:var(--muted)}
+/* 선택 카드 */
+.opts{display:flex;flex-wrap:wrap;gap:var(--s1)}
+.opt{position:relative}
+.opt input{position:absolute;opacity:0;inset:0;cursor:pointer}
+.opt span{display:flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--bg);font-size:14px}
+.opt input:checked+span{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);font-weight:500}
+.opt input:focus-visible+span{outline:2px solid var(--blue);outline-offset:2px}
+.play{font-size:11px;border:1px solid currentColor;border-radius:99px;padding:0 6px;opacity:.8}
+.group{display:grid;grid-template-columns:140px minmax(0,1fr);gap:var(--s2);align-items:start;padding-block:12px;border-bottom:1px solid var(--line)}
+.group:last-child{border-bottom:0}
+.group .k{font-weight:500;padding-top:9px}
+input[type=range]{width:100%;accent-color:var(--blue)}
+.scale{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+/* 진행 */
+.prog{display:grid;gap:12px}
+.pi{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:12px;align-items:center}
+.pi .ic{width:22px;height:22px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-size:12px}
+.pi.done .ic{background:var(--ok);border-color:var(--ok);color:#fff}
+.pi.run .ic{border-color:var(--blue);border-top-color:transparent;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pi small{color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.bar-out{height:8px;border-radius:99px;background:var(--bg);border:1px solid var(--line);overflow:hidden}
+.bar-fill{height:100%;width:0;background:var(--blue);transition:width .4s}
+/* 결과 */
+.player{aspect-ratio:16/9;max-width:100%;border-radius:var(--r);background:linear-gradient(135deg,#1B2559,#405BEA);display:grid;place-items:center;position:relative;overflow:hidden}
+.player .win{width:72%;aspect-ratio:16/9;background:#fff;border-radius:8px;box-shadow:0 12px 40px rgba(0,0,0,.35);display:grid;place-items:center;color:#1B2559;font-family:var(--display);font-weight:600}
+.player .cap{position:absolute;bottom:6%;left:50%;transform:translateX(-50%);background:rgba(27,37,89,.82);color:#fff;font-size:13px;padding:4px 12px;border-radius:6px;white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis}
+.player .stepb{position:absolute;top:5%;left:4%;background:rgba(255,255,255,.14);color:#fff;font-size:12px;padding:3px 10px;border-radius:6px}
+.files{display:grid;gap:8px}
+.file{display:flex;justify-content:space-between;gap:12px;font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.file small{color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* 내보내기 */
+.dest{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s1)}
+.dest .opt span{flex-direction:column;align-items:flex-start;gap:0}
+.dest .opt small{font-size:11px;color:var(--muted);font-weight:400}
+details{border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+details+details{margin-top:8px}
+summary{cursor:pointer;padding:10px 14px;font-weight:500;display:flex;justify-content:space-between;gap:12px}
+summary span{font-weight:400;font-size:13px;color:var(--muted)}
+.checks{padding:0 14px 12px;display:flex;flex-wrap:wrap;gap:8px 16px;font-size:14px}
+.checks label{display:flex;gap:6px;align-items:center}
+.checks input{accent-color:var(--blue)}
+.verdict{display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:12px 14px;border-radius:8px;background:var(--ok-soft);color:var(--ok);font-size:14px}
+.verdict.has-warn{background:var(--warn-soft);color:var(--warn)}
+.note{font-size:12px;color:var(--muted)}
+.mockflag{grid-column:1/-1;font-size:12px;color:var(--muted);text-align:center}
+@media (max-width:860px){
+  nav.steps{grid-column:1/-1;position:static;flex-direction:row;overflow-x:auto;gap:4px}
+  .step small{display:none}
+  .step{flex:none;padding:8px 10px}
+  main{grid-column:1/-1}
+  .dest{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row3{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:520px){
+  .row{grid-template-columns:minmax(0,1fr)}
+  .group{grid-template-columns:minmax(0,1fr);gap:6px}
+  .group .k{padding-top:0}
+  .step b{font-size:13px}
+}
+/* v2 추가 */
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+.mode{display:flex;flex-direction:column;gap:4px;text-align:left;padding:var(--s3);border:1.5px solid var(--line);border-radius:var(--r);background:var(--bg);color:var(--fg);font:inherit;cursor:pointer}
+.mode b{font-family:var(--display);font-size:16px}
+.mode span{font-size:13px;color:var(--muted)}
+.mode.on{border-color:var(--blue);background:var(--blue-soft)}
+.guide{display:grid;gap:12px;padding:var(--s2);border:1px dashed var(--line);border-radius:8px}
+.guide ol{margin:0;padding-left:20px;display:grid;gap:8px;font-size:14px}
+.inline{display:flex;gap:var(--s1);flex-wrap:wrap}
+.inline input{flex:1 1 220px;min-width:0}
+.ai-run{display:grid;gap:6px;font-size:14px}
+.ai-run div{display:flex;gap:8px;align-items:center}
+.stylecard{display:grid;gap:8px;padding:var(--s2);border-radius:8px;background:var(--bg);border:1px solid var(--line);font-size:14px}
+.stylecard .sr{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.stylecard .sr span:first-child{color:var(--muted)}
+.layers{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
+.summary{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:8px;background:var(--ok-soft);color:var(--ok);font-size:14px}
+.summary small{color:var(--muted)}
+.drawer{position:fixed;inset:0;background:rgba(10,14,40,.45);display:flex;justify-content:flex-end;z-index:10}
+.drawer[hidden]{display:none!important}
+.drawer .panel{width:min(520px,100%);height:100%;overflow:auto;background:var(--surface);padding:var(--s3);padding-top:calc(var(--s3) + env(safe-area-inset-top,0px));display:flex;flex-direction:column;gap:var(--s2)}
+.swatches{display:flex;gap:var(--s1);flex-wrap:wrap}
+.sw{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.sw i{width:18px;height:18px;border-radius:5px;display:block}
+.qa{display:grid;gap:8px;font-size:14px}
+.qa div{display:flex;justify-content:space-between;gap:12px}
+@media (max-width:520px){.modes{grid-template-columns:minmax(0,1fr)}}
+/* 자동 녹화 모습 */
+.robot{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff;color:#1B2559;position:relative}
+.robot .bar{background:var(--bg);color:var(--muted)}
+.rpage{position:relative;height:350px;padding:20px 24px;font-size:13px;overflow:hidden;background:#fff}
+.rhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.rlogo{width:96px;height:14px;border-radius:4px;background:#405BEA}
+.rbtn{display:inline-block;padding:6px 12px;border-radius:6px;background:#E8ECFD;color:#405BEA;font-weight:600;font-size:12px;transition:background .15s}
+.rbtn.solid{background:#405BEA;color:#fff}
+.rbtn.hit{background:#cfd8ff}
+.rform{display:grid;gap:10px;max-width:420px}
+.rrow{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:8px;align-items:center}
+.rrow label{color:#5D6889;font-size:12px}
+.rin{height:30px;border:1px solid #DCE1EF;border-radius:6px;padding:0 10px;display:flex;align-items:center;font-family:var(--mono);font-size:12px;color:#16204A;background:#fff;overflow:hidden;white-space:nowrap}
+.rin.focus{border-color:#405BEA;box-shadow:0 0 0 2px #E8ECFD}
+.rin.blur{color:transparent;text-shadow:0 0 7px rgba(22,32,74,.55)}
+.rok{font-size:11px;color:#1F8A5B}
+.rchk{display:flex;gap:8px;align-items:center;font-size:12px;color:#16204A}
+.rchk i{width:16px;height:16px;border:1.5px solid #5D6889;border-radius:4px;display:grid;place-items:center;font-style:normal;font-size:11px;color:#fff}
+.rchk i.on{background:#405BEA;border-color:#405BEA}
+.rcursor{position:absolute;left:50%;top:60%;width:22px;height:22px;pointer-events:none;transition:left .8s cubic-bezier(.3,.1,.2,1),top .8s cubic-bezier(.3,.1,.2,1);z-index:3;filter:drop-shadow(0 1px 2px rgba(0,0,0,.35))}
+.rripple{position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;border:3px solid #CC1424;pointer-events:none;z-index:2;animation:rip .6s ease-out forwards}
+@keyframes rip{from{transform:scale(1);opacity:1}to{transform:scale(5);opacity:0}}
+.rcap{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);background:rgba(27,37,89,.88);color:#fff;font-size:12px;padding:5px 12px;border-radius:6px;max-width:92%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;z-index:4}
+.rtoast{position:absolute;right:16px;top:16px;background:#FCF0DC;color:#A86200;font-size:12px;padding:6px 10px;border-radius:6px;z-index:4}
+.rdone{position:absolute;inset:0;background:rgba(14,19,48,.72);color:#fff;display:grid;place-items:center;text-align:center;z-index:5;font-size:14px}
+.rmeta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+@media (prefers-reduced-motion:reduce){.rcursor{transition:none}.rripple{animation:none;display:none}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="logo">T</div>
+      <div><h1>튜토리얼 메이커</h1><div class="hint">웹사이트에서 한 번 해 보이면, 사용법 영상이 완성됩니다</div></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="tag">시안 v2 · 실제 기능 없음</span>
+      <button class="ghost" id="brandBtn" type="button">⚙ 설정</button>
+    </div>
+  </header>
+  <nav class="steps" aria-label="진행 단계" id="nav"></nav>
+  <main id="main"></main>
+  <div class="mockflag">이 화면은 모양과 흐름을 보여 드리는 시안입니다. 버튼을 눌러 단계를 넘겨 볼 수 있습니다.</div>
+</div>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="panel" role="dialog" aria-label="설정">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <h2 style="font-family:var(--display);margin:0;font-size:18px;color:var(--navy)">설정</h2>
+      <button class="ghost" type="button" id="closeDrawer">닫기</button>
+    </div>
+    <p class="hint" style="margin:0">처음 한 번만 정해 두면 됩니다. 안 건드려도 1편과 같은 품질로 나옵니다.</p>
+    <div class="opts" role="tablist"><label class="opt"><input type="radio" name="tb" id="tbB" checked><span>브랜드 · 모양과 목소리</span></label><label class="opt"><input type="radio" name="tb" id="tbR"><span>규칙 · 길이와 문장</span></label></div>
+    <div id="tabRules" hidden style="display:flex;flex-direction:column;gap:var(--s2)">
+      <div class="row"><label class="f" for="rl1">목표 길이<select id="rl1"><option>1분 30초 (추천)</option><option>1분</option><option>2분</option></select></label><label class="f" for="rl2">한 문장 최대<input type="text" id="rl2" value="40자"></label></div>
+      <div class="row"><label class="f" for="rl3">문장 사이 쉼<input type="text" id="rl3" value="0.5초"></label><label class="f" for="rl4">"눌러 주세요" 뒤 쉼<input type="text" id="rl4" value="1.0초"></label></div>
+      <div><div class="hint" style="margin-bottom:6px">표현 바꾸기</div><div class="opts"><span class="chip">필수 항목 → 꼭 적어야 하는 칸</span><span class="chip">＋ 추가</span></div></div>
+      <div class="verdict">🔒 개인정보 흐림 · 저장·발송 차단은 항상 켜져 있어요</div>
+      <div class="foot"><button class="ghost" type="button">1편 기준으로 되돌리기</button><button class="primary" type="button" id="saveRules">저장</button></div>
+    </div>
+    <div id="tabBrand" style="display:flex;flex-direction:column;gap:var(--s2)">
+    <div class="opts"><label class="opt"><input type="radio" name="bl" id="bl0" checked><span>태권월드</span></label><label class="opt"><input type="radio" name="bl" id="bl1"><span>고객사 A</span></label><label class="opt"><input type="radio" name="bl" id="bl2"><span>＋ 새 브랜드</span></label></div>
+    <div class="inline"><button class="ghost" type="button">사이트 주소로 가져오기</button><button class="ghost" type="button">로고 올리기</button></div>
+    <div class="row">
+      <label class="f" for="bn">표기 이름<input type="text" id="bn" value="태권월드"></label>
+      <label class="f" for="br">읽는 이름 (발음)<input type="text" id="br" value="태권 월드"></label>
+    </div>
+    <div><div class="hint" style="margin-bottom:6px">색 (역할별로만 사용)</div>
+      <div class="swatches"><span class="sw"><i style="background:linear-gradient(135deg,#1B2559,#405BEA)"></i>주 색 · 배경</span><span class="sw"><i style="background:#CC1424"></i>강조 · 클릭 효과</span><span class="sw"><i style="background:#54B4CC"></i>포인트 · 단계 번호</span></div></div>
+    <div class="row">
+      <label class="f" for="bv">기본 목소리<select id="bv"><option>현수 · 차분 (-8%)</option><option>선희 · 밝게</option></select></label>
+      <label class="f" for="bt">말투<select id="bt"><option>차분</option><option>친근</option><option>전문</option></select></label>
+    </div>
+    <label class="f" for="bh">인사말<input type="text" id="bh" value="안녕하세요, 태권 월드입니다."></label>
+    <label class="f" for="be">설명 끝 고정 문구<input type="text" id="be" value="태권월드 · taekwonworld.net"></label>
+    <details><summary>고급 설정<span>화질 · 확대 · 디밍 · 워터마크</span></summary>
+      <div class="checks" style="flex-direction:column;align-items:stretch">
+        <label class="f" for="bq">기본 화질<select id="bq"><option>1440p 60fps (추천)</option><option>1080p (빠르게)</option><option>4K (2~3배 오래 걸림)</option><option>8K (실험용, 매우 오래 걸림)</option></select></label>
+        <div class="row"><label class="f" for="bz">확대 배율<input type="text" id="bz" value="1.6 (최대 2.0)"></label><label class="f" for="bd">디밍<input type="text" id="bd" value="30%"></label></div>
+      </div></details>
+    <div class="verdict">✓ 글자 읽힘 검사 통과</div>
+    <div class="foot"><span></span><button class="primary" type="button" id="saveBrand">저장</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STEPS=[
+  {t:"시작",d:"주소 넣고 방법 고르기"},
+  {t:"확인",d:"자동으로 만든 문장 보기"},
+  {t:"선택",d:"목소리·꾸미기 고르기"},
+  {t:"만들기",d:"알아서 녹화·편집·검수"},
+  {t:"결과·내보내기",d:"올릴 곳 고르기"}
+];
+const SCENES=[
+  {act:"클릭",tgt:"로그인(관장)",say:"먼저, 첫 화면 오른쪽에 있는 로그인 관장 버튼을 눌러 주세요."},
+  {act:"클릭",tgt:"회원가입",say:"아래에 있는 회원가입 버튼을 눌러 주세요."},
+  {act:"입력",tgt:"아이디",val:"taekwon_demo",say:"사용할 아이디를 적어 주세요."},
+  {act:"클릭",tgt:"중복확인",say:"옆에 있는 중복확인 버튼을 눌러 주세요.",bubble:"처음 한 번만!"},
+  {act:"입력",tgt:"이름",val:"●●●",say:"이름을 적어 주세요.",blur:true},
+  {act:"입력",tgt:"휴대전화",val:"●●●",say:"휴대전화 번호를 적어 주세요.",blur:true},
+  {act:"체크",tgt:"약관 전체 동의",say:"약관 전체 동의에 체크해 주세요."},
+  {act:"클릭",tgt:"등록",say:"마지막으로 등록 버튼을 누르면 끝이에요.",guard:true}
+];
+// 올릴 곳 → 필요한 항목 연결표 (시안용 축약본)
+const DESTS=[
+  {id:"yt",t:"유튜브",s:"16:9 · 1440p",on:1,need:["가로 1440p","최종 화면 자리 (마지막 20초)","유튜브 썸네일 2~3개","제목","설명","해시태그","챕터","고정 댓글","자막 파일 (SRT)","다국어 자막·제목"]},
+  {id:"sh",t:"유튜브 쇼츠",s:"9:16 · 3분 안쪽",need:["세로 1080×1920","첫 2초 결과 화면","반복 재생 구성","제목","해시태그","자막 새김","본편 연결 안내"]},
+  {id:"nc",t:"네이버 클립",s:"9:16",need:["세로 1080×1920","첫 2초 결과 화면","해시태그","자막 새김","안전 영역 배치"]},
+  {id:"nb",t:"네이버 블로그",s:"글 + 영상",need:["가로 1080p (H.264)","블로그용 단계별 글","화면 캡처","대표 이미지","대체 텍스트"]},
+  {id:"rl",t:"인스타 릴스",s:"9:16",need:["세로 1080×1920","세로 커버","첫 2초 결과 화면","반복 재생 구성","해시태그","행동 유도 문구","자막 새김","안전 영역 배치"]},
+  {id:"fd",t:"인스타 피드",s:"4:5",need:["4:5 1080×1350","자막 새김","해시태그"]},
+  {id:"tt",t:"틱톡",s:"9:16",need:["세로 1080×1920","첫 2초 결과 화면","해시태그","자막 새김","안전 영역 배치"]},
+  {id:"fb",t:"페이스북",s:"4:5 / 9:16",need:["4:5 1080×1350","자막 새김","설명"]},
+  {id:"li",t:"링크드인",s:"1:1 · 자막 필수",need:["1:1 1080×1080","자막 새김","업무용 설명"]},
+  {id:"x",t:"X",s:"16:9 / 1:1",need:["가로 1080p","짧은 버전","첫 문장에 핵심"]},
+  {id:"th",t:"스레드",s:"9:16 / 4:5",need:["4:5 1080×1350","자막 새김","짧은 설명"]},
+  {id:"pn",t:"핀터레스트",s:"9:16 / 2:3",need:["세로 1080×1920","핀 제목·설명","링크"]},
+  {id:"web",t:"내 웹사이트",s:"AV1 + H.264",on:1,need:["웹용 AV1","웹용 H.264 (예비)","웹 포스터 (AVIF)","웹용 자막 (VTT)","붙여 넣기 코드","누르기 전엔 안 받기","단계별 글 + 화면 캡처","대본 전문","구조화 데이터 (VideoObject·HowTo·Clip)","영상 사이트맵","오픈그래프·X 카드","카카오톡 미리보기 점검","대체 텍스트","자주 묻는 질문","검색 엔진 제출 안내 (구글·네이버)"]},
+  {id:"ml",t:"이메일·메신저",s:"클립 · 이미지",need:["장면별 짧은 클립 (GIF·MP4)","재생 버튼 썸네일 + 링크"]}
+];
+const ALWAYS=["설명이 담긴 파일 이름","영상 파일 안 정보 (제목·언어·저작권)","링크 추적 꼬리표 (UTM)","개인정보 최종 검사","음악·음성 사용 조건","올린 곳·성과 기록"];
+let cur=0, mode="demo", recDone=false, aiKey=false, aiDone=false, deco="brand";
+const $=s=>document.querySelector(s);
+
+function nav(){
+  $("#nav").innerHTML=STEPS.map((s,i)=>`<button type="button" class="step ${i===cur?'on':''} ${i<cur?'done':''}" data-i="${i}"><span class="n">${i<cur?'✓':i+1}</span><span><b>${s.t}</b><small>${s.d}</small></span></button>`).join("");
+  $("#nav").querySelectorAll(".step").forEach(b=>b.onclick=()=>go(+b.dataset.i));
+}
+function foot(prev,next,nextLabel){
+  return `<div class="foot">${prev?`<button class="ghost" type="button" id="prev">← 이전</button>`:'<span></span>'}${next?`<button class="primary" type="button" id="next">${nextLabel||'다음 →'}</button>`:''}</div>`;
+}
+function go(i){cur=i;nav();render();window.scrollTo({top:0,behavior:"smooth"})}
+function radios(name,list,checked){return list.map((t,i)=>`<label class="opt"><input type="radio" name="${name}" id="${name}${i}" ${i===checked?'checked':''}><span>${t}</span></label>`).join("")}
+
+function startView(){
+  const demo=`
+  <div class="browser">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>taekwonworld.net</span>
+      ${recDone?'<span class="live" style="color:var(--ok)">✓ 기록 완료 · 동작 8개</span>':'<span class="live"><i></i>기록 중 · 동작 3개</span>'}</div>
+    <div class="site"><div class="fake" style="width:40%"></div><div class="fake" style="width:70%"></div><div class="fake" style="width:55%"></div><div class="fakebtn">회원가입</div></div>
+  </div>
+  <div class="foot"><span class="hint">${recDone?'다음 단계에서 자동으로 만든 문장을 확인합니다.':'평소처럼 한 번 해 보이고 끝을 누르세요. 화면은 찍지 않고 동작만 기록합니다.'}</span>
+    ${recDone?'<button class="primary" type="button" id="next">다음 →</button>':'<button class="primary rec" type="button" id="stop">■ 끝</button>'}</div>`;
+  const ai=!aiKey?`
+  <div class="guide"><b>처음 한 번만 연결하면 됩니다</b>
+    <ol><li>키를 받는 곳을 엽니다. <button class="ghost" type="button">키 받는 곳 열기</button></li>
+    <li>받은 키를 붙여 넣습니다.<div class="inline" style="margin-top:6px"><input type="text" id="key" placeholder="sk-ant-…" aria-label="API 키"><button class="primary" type="button" id="keyOk">확인</button></div></li>
+    <li>연결되면 다시 묻지 않습니다. 키는 이 PC에만 저장됩니다.</li></ol></div>`:`
+  <div class="summary" style="margin-bottom:var(--s2)"><span>✓ AI 도우미 연결됨</span><small>한 편 초안 예상 비용 약 몇백 원</small></div>
+  <div class="inline"><input type="text" id="ask" value="관장님이 처음 회원가입하는 방법" aria-label="무엇을 보여 줄까요"><button class="primary" type="button" id="aiGo">맡기기</button></div>
+  ${aiDone?`<div class="ai-run" style="margin-top:var(--s2)"><div>✓ 첫 화면 둘러보기</div><div>✓ 로그인(관장) → 회원가입 경로 찾음</div><div>✓ 입력칸 8개 확인, 개인정보 칸 4개 흐림 지정</div><div>✓ 등록 버튼은 저장 차단으로 표시</div></div>
+  <div class="foot"><span class="hint">장면 표와 문장을 채웠어요.</span><button class="primary" type="button" id="next">확인하기 →</button></div>`:''}`;
+  return `
+<section class="card">
+  <h2>어떤 사이트의 사용법을 만들까요?</h2>
+  <p class="lead">주소를 넣고 방법을 고르세요. 제목은 비워 두면 자동으로 제안합니다.</p>
+  <div class="row">
+    <label class="f" for="url">사이트 주소<input type="text" id="url" value="https://taekwonworld.net"></label>
+    <label class="f" for="ttl">영상 제목 (선택)<input type="text" id="ttl" placeholder="비워 두면 자동 제안"></label>
+  </div>
+</section>
+<section class="modes">
+  <button type="button" class="mode ${mode==='demo'?'on':''}" id="mDemo"><b>🖱 한 번 해 보이기</b><span>내가 직접 한 번 보여 주기. AI 없이, 비용 없이</span></button>
+  <button type="button" class="mode ${mode==='ai'?'on':''}" id="mAi"><b>✨ AI에게 맡기기</b><span>한 줄로 부탁하면 AI가 사이트를 둘러보고 채움</span></button>
+</section>
+<section class="card">${mode==='demo'?'<h2>한 번 해 보이기</h2>'+demo:'<h2>AI에게 맡기기</h2><p class="lead">로그인·인증번호가 필요하면 그때만 물어봅니다. 실제 등록·발송은 막혀 있습니다.</p>'+ai}</section>`;
+}
+
+const VIEWS=[
+startView,
+()=>`
+<section class="card">
+  <h2>이렇게 말하고, 이렇게 누릅니다</h2>
+  <p class="lead">${mode==='ai'?'AI가':'누른 버튼 글자를 보고'} 문장을 자동으로 만들었어요. 문장을 눌러 바로 고칠 수 있습니다. (표 안 글자는 예시)</p>
+  <div class="scroll"><table>
+    <thead><tr><th>#</th><th>할 말</th><th>동작</th><th>누른 곳</th><th>리허설</th></tr></thead>
+    <tbody>${SCENES.map((s,i)=>`<tr>
+      <td class="num">${String(i+1).padStart(2,"0")}</td>
+      <td class="say"><div contenteditable="true">${s.say}</div>${s.bubble?`<div style="margin-top:4px"><span class="chip warn">말풍선 · ${s.bubble}</span></div>`:''}</td>
+      <td>${s.act}</td>
+      <td>${s.tgt}${s.val?` <span class="chip ${s.blur?'blur':''}">${s.blur?'흐림 처리':s.val}</span>`:''}</td>
+      <td>${s.guard?'<span class="chip warn">저장 차단</span>':'<span class="chip ok">✓ 찾음</span>'}</td></tr>`).join("")}</tbody>
+  </table></div>
+</section>
+<section class="row">
+  <div class="card"><h2>단계 묶음</h2><p class="lead">영상 왼쪽 위에 표시됩니다.</p>
+    <div class="opts"><span class="chip">1 가입 화면 찾기</span><span class="chip">2 정보 입력하기</span><span class="chip">3 동의하고 등록</span></div></div>
+  <div class="card"><h2>개인정보</h2><p class="lead">녹화할 때부터 글자를 흐리게 합니다.</p>
+    <div class="opts"><span class="chip blur">이름</span><span class="chip blur">휴대전화</span><span class="chip blur">인증번호</span><span class="chip blur">생년월일</span></div></div>
+</section>
+<section class="card"><h2>시작 화면</h2><p class="lead">로그인 과정을 영상에 넣을지 고르세요.</p>
+  <div class="opts">${radios("st",["로그아웃 상태에서 (로그인도 보여 주기)","로그인한 상태에서 (로그인은 녹화 안 함)"],0)}</div></section>
+${foot(true,true)}`,
+()=>`
+<section class="card">
+  <h2>만들기 전에 골라 주세요</h2>
+  <p class="lead">추천값이 이미 골라져 있어요. 그대로 다음을 눌러도 됩니다.</p>
+  <div class="group"><div class="k">목소리</div><div class="opts">
+    ${[["현수 · 차분",1],["선희 · 밝게"],["인준 · 또박또박"],["내 목소리로 녹음"],["목소리 없이 자막만"]].map(([t,c],i)=>`<label class="opt"><input type="radio" name="v" id="v${i}" ${c?'checked':''}><span>${t}${i<3?' <em class="play">▶ 첫 문장 듣기</em>':''}</span></label>`).join("")}
+  </div></div>
+  <div class="group"><div class="k">영상 모양</div><div class="opts">${radios("sh",["가로 · 유튜브","세로 · 쇼츠","둘 다"],0)}</div></div>
+  <div class="group"><div class="k">꾸미기</div><div style="display:grid;gap:var(--s2)"><div class="opts">
+    <label class="opt"><input type="radio" name="dc" id="dc0" ${deco==='brand'?'checked':''}><span>우리 브랜드</span></label>
+    <label class="opt"><input type="radio" name="dc" id="dc1" ${deco==='basic'?'checked':''}><span>기본</span></label>
+    <label class="opt"><input type="radio" name="dc" id="dc2" ${deco==='ref'?'checked':''}><span>＋ 참고 영상 스타일</span></label></div>
+    ${deco==='ref'?`<div class="stylecard">
+      <div class="sr"><b>참고영상.mp4 에서 뽑은 편집 기법</b><span class="chip ok">분석 완료</span></div>
+      <div class="sr"><span>속도감</span><span>장면 평균 3.2초마다 전환</span></div>
+      <div class="sr"><span>확대</span><span>자주 · 평균 1.8배 · 빠르게 들어감</span></div>
+      <div class="sr"><span>전환</span><span>바로 넘김 70% · 서서히 30%</span></div>
+      <div class="sr"><span>자막</span><span>화면 아래 · 굵게 · 노란 강조 단어</span></div>
+      <div class="sr"><span>말 빠르기</span><span>빠름 (1분에 약 330자)</span></div>
+      <div class="sr"><span>인트로</span><span>3초 · 결과 화면 먼저</span></div>
+      <div class="sr"><span>따라 할 수 없는 것</span><span class="chip warn">3D 회전 전환 1곳</span></div>
+      <div class="layers">적용 순서: <span class="chip">1편 기본 규칙</span>→<span class="chip">참고 영상 스타일</span>→<span class="chip">우리 브랜드 색·로고·목소리</span>→<span class="chip blur">안전 규칙은 항상 유지</span></div>
+    </div>`:''}
+  </div></div>
+  <details style="margin-top:var(--s2)"><summary>더 고르기<span>말 빠르기 · 자막 · 배경음악 (안 건드려도 됨)</span></summary>
+    <div style="padding:0 14px 8px">
+      <div class="group"><div class="k">말 빠르기</div><div><input type="range" id="spd" min="0" max="4" value="1" aria-label="말 빠르기"><div class="scale"><span>천천히</span><span>보통</span><span>빠르게</span></div></div></div>
+      <div class="group"><div class="k">자막</div><div class="opts">${radios("sb",["켜기","끄기"],0)}</div></div>
+      <div class="group"><div class="k">배경음악</div><div class="opts">${radios("bg",["없음","잔잔하게","밝게"],0)}</div></div>
+    </div></details>
+</section>
+${foot(true,true,'만들기 →')}`,
+()=>`
+<section class="card">
+  <h2>만들고 있어요</h2>
+  <p class="lead">따로 뜨는 브라우저 창은 프로그램이 직접 조작합니다. 마우스를 건드리지 않으셔도 됩니다.</p>
+  <div class="bar-out" aria-hidden="true"><div class="bar-fill" id="bf"></div></div>
+  <div class="prog" id="prog" style="margin-top:var(--s2)"></div>
+</section>
+<section class="card" id="robotCard" hidden>
+  <h2>자동 녹화 중 · 따로 뜬 브라우저 창</h2>
+  <p class="lead">[만들기 →]를 누르면 이 창이 저절로 뜨고, 프로그램이 혼자 클릭하고 타이핑합니다. 사람은 보고만 있으면 됩니다.</p>
+  <div class="robot">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>taekwonworld.net</span><span class="live"><i></i>프로그램이 조작 중 · 마우스를 건드리지 마세요</span></div>
+    <div class="rpage" id="rpage"></div>
+  </div>
+  <div class="rmeta"><span id="rstep">준비 중</span><button class="ghost" type="button" id="replay" hidden>↻ 다시 보기</button></div>
+</section>
+<section class="card" id="qaCard" hidden><h2>자동 검수 결과</h2><p class="lead">1편 때 사람이 하던 확인을 프로그램이 했어요.</p>
+  <div class="qa">
+    <div><span>주소창·브라우저 테두리 노출</span><span class="chip ok">없음</span></div>
+    <div><span>디밍·클릭 효과 위치</span><span class="chip ok">8/8 버튼과 일치</span></div>
+    <div><span>발음 검사</span><span class="chip ok">다르게 들린 단어 없음</span></div>
+    <div><span>개인정보 최종 검사 (글자 인식)</span><span class="chip ok">노출 0건</span></div>
+    <div><span>영상·소리 길이</span><span class="chip ok">일치</span></div>
+  </div></section>
+<div class="foot"><button class="ghost" type="button" id="prev">← 이전</button><button class="primary" type="button" id="next" disabled style="opacity:.5">결과 보기 →</button></div>`,
+()=>`
+<section class="card">
+  <h2>완성됐어요</h2>
+  <p class="lead">1분 30초 · 1440p 60fps · 챕터 5개</p>
+  <div class="row3" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)">
+    <div class="player"><span class="stepb">2/3 정보 입력하기</span><div class="win">taekwonworld.net</div><span class="cap">사용할 아이디를 적어 주세요.</span></div>
+    <div class="files">
+      <div class="file"><span>영상 (유튜브용)</span><small>1440p</small></div>
+      <div class="file"><span>영상 사본</span><small>1080p</small></div>
+      <div class="file"><span>자막</span><small>.srt</small></div>
+      <div class="file"><span>따라 하기 설명서</span><small>PDF</small></div>
+      <button class="ghost" type="button">📁 폴더 열기</button>
+    </div>
+  </div>
+</section>
+<section class="card">
+  <h2>어디에 올릴까요?</h2>
+  <p class="lead">고르면 아래 항목이 자동으로 바뀝니다. 직접 클릭할 필요는 없어요.</p>
+  <div class="dest">${DESTS.map(d=>`<label class="opt"><input type="checkbox" id="d_${d.id}" data-d="${d.id}" ${d.on?'checked':''}><span>${d.t}<small>${d.s}</small></span></label>`).join("")}</div>
+</section>
+<section class="card" id="auto"></section>
+<div class="foot"><button class="ghost" type="button" id="prev">← 이전</button><span></span></div>`
+];
+
+function renderAuto(){
+  const sel=DESTS.filter(d=>d.on);
+  const items=[...new Set(sel.flatMap(d=>d.need).concat(sel.length?ALWAYS:[]))];
+  const box=$("#auto"); if(!box)return;
+  const warn=sel.some(d=>d.id==="rl");
+  box.innerHTML=`<h2>자동으로 챙기는 것</h2>
+    ${sel.length?`<div class="summary"><span>✓ ${items.length}개 자동 준비됨</span><small>${sel.map(d=>d.t).join(" · ")}</small></div>
+    <details style="margin-top:var(--s1)"><summary>자세히 보기<span>빼고 싶은 것만 끄세요</span></summary><div class="checks">${items.map((x,j)=>`<label><input type="checkbox" id="it${j}" checked>${x}</label>`).join("")}</div></details>
+    ${warn?`<div class="verdict has-warn" style="margin-top:var(--s2)"><b>⚠ 1개 확인 필요</b><span>릴스 설명에 링크가 없어요.</span><button class="ghost" type="button">프로필 링크 안내 넣기</button></div>`:''}
+    <div class="foot"><span class="note">노출 여부는 플랫폼이 정합니다. 프로그램은 규격과 조건을 빠짐없이 맞춥니다.</span><button class="primary" type="button">내보내기</button></div>`
+    :`<p class="lead">위에서 올릴 곳을 하나 이상 골라 주세요.</p>`}`;
+}
+
+function render(){
+  $("#main").innerHTML=VIEWS[cur]();
+  const p=$("#prev"), n=$("#next"), s=$("#stop");
+  if(p)p.onclick=()=>go(cur-1);
+  if(n)n.onclick=()=>go(cur+1);
+  if(s)s.onclick=()=>{recDone=true;render()};
+  if(cur===0){
+    $("#mDemo").onclick=()=>{mode="demo";render()};
+    $("#mAi").onclick=()=>{mode="ai";render()};
+    const k=$("#keyOk"); if(k)k.onclick=()=>{aiKey=true;render()};
+    const a=$("#aiGo"); if(a)a.onclick=()=>{aiDone=true;render()};
+  }
+  if(cur===2){["brand","basic","ref"].forEach((v,i)=>{$("#dc"+i).onchange=()=>{deco=v;render()}})}
+  if(cur===3)runProg();
+  if(cur===4){renderAuto();document.querySelectorAll("[data-d]").forEach(c=>c.onchange=()=>{DESTS.find(d=>d.id===c.dataset.d).on=c.checked?1:0;renderAuto()})}
+}
+function runProg(){
+  const items=[["목소리 만들기","문장 8개"],["발음 검사","✓"],["리허설","8/8 찾음"],["자동 녹화","1분 08초"],["화면 연출","확대·디밍·클릭 효과"],["인트로·아웃트로·자막",""],["자동 검수","5개 항목 통과"],["출력","1440p60 · 1080p30"]];
+  let k=0;
+  const draw=()=>{
+    const pg=$("#prog"); if(!pg)return;
+    pg.innerHTML=items.map(([t,d],i)=>`<div class="pi ${i<k?'done':i===k?'run':''}"><span class="ic">${i<k?'✓':''}</span><span>${t}</span><small>${i<k?d:i===k?'진행 중':''}</small></div>`).join("");
+    $("#bf").style.width=Math.round(k/items.length*100)+"%";
+    if(k>=items.length){const n=$("#next");n.disabled=false;n.style.opacity=1;$("#qaCard").hidden=false;$("#replay").hidden=false;return}
+    if(k===3){$("#robotCard").hidden=false;$("#robotCard").scrollIntoView({behavior:"smooth",block:"center"});robot(()=>{k++;if(cur===3)draw()});return}
+    k++; setTimeout(()=>{if(cur===3)draw()},600);
+  };
+  draw();
+}
+
+// 자동 녹화 모습 (시안용 흉내)
+const CURSOR=`<svg class="rcursor" id="rc" viewBox="0 0 22 22" aria-hidden="true"><path d="M3 2 L3 18 L7.5 14 L10.5 20.5 L13 19.4 L10 13 L16 13 Z" fill="#fff" stroke="#16204A" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+function robot(done){
+  const page=$("#rpage"); if(!page)return;
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const alive=()=>cur===3&&document.body.contains(page);
+  const step=t=>{const s=$("#rstep");if(s)s.textContent=t};
+  const cap=t=>{let c=page.querySelector(".rcap");if(!c){c=document.createElement("div");c.className="rcap";page.appendChild(c)}c.textContent=t};
+  const move=async sel=>{const el=page.querySelector(sel),c=$("#rc");if(!el||!c)return;const a=page.getBoundingClientRect(),b=el.getBoundingClientRect();c.style.left=(b.left-a.left+b.width*0.5)+"px";c.style.top=(b.top-a.top+b.height*0.55)+"px";await wait(900)};
+  const click=async sel=>{const el=page.querySelector(sel);await wait(250);const c=$("#rc");const r=document.createElement("span");r.className="rripple";r.style.left=c.style.left;r.style.top=c.style.top;page.appendChild(r);setTimeout(()=>r.remove(),700);if(el){el.classList.add("hit");setTimeout(()=>el.classList.remove("hit"),250)}await wait(350)};
+  const type=async(sel,text,blur)=>{const el=page.querySelector(sel);el.classList.add("focus");if(blur)el.classList.add("blur");for(const ch of text){if(!alive())return;el.textContent+=ch;await wait(90)}el.classList.remove("focus")};
+  const home=()=>{page.innerHTML=`<div class="rhead"><div class="rlogo"></div><span class="rbtn solid" id="r-login">로그인(관장)</span></div><div style="display:grid;gap:10px;max-width:60%"><div class="fake" style="width:80%"></div><div class="fake" style="width:60%"></div><div class="fake" style="width:70%"></div></div>`+CURSOR};
+  const loginPage=()=>{page.innerHTML=`<div class="rhead"><div class="rlogo"></div><span></span></div><div style="display:grid;gap:10px;max-width:300px"><div class="rin"></div><div class="rin"></div><span class="rbtn solid" style="text-align:center">로그인</span><span class="rbtn" id="r-join" style="text-align:center">회원가입</span></div>`+CURSOR};
+  const form=()=>{page.innerHTML=`<div class="rhead"><div class="rlogo"></div><span style="font-size:12px;color:#5D6889">관장님 회원가입</span></div>
+    <div class="rform">
+      <div class="rrow"><label>아이디</label><div class="rin" id="r-id"></div><span class="rbtn" id="r-dup">중복확인</span></div>
+      <div class="rrow"><label>이름</label><div class="rin" id="r-name"></div><span id="r-okid" class="rok"></span></div>
+      <div class="rrow"><label>휴대전화</label><div class="rin" id="r-phone"></div><span></span></div>
+      <div class="rchk" id="r-agree"><i id="r-box"></i>약관 전체 동의</div>
+      <span class="rbtn solid" id="r-submit" style="justify-self:start">등록</span>
+    </div>`+CURSOR};
+  (async()=>{
+    home(); await wait(50);
+    const c0=$("#rc"); c0.style.transition="none"; c0.style.left="60%"; c0.style.top="70%"; void c0.offsetWidth; c0.style.transition="";
+    step("장면 1/8 · 클릭"); cap("먼저, 첫 화면 오른쪽에 있는 로그인 관장 버튼을 눌러 주세요."); await wait(600);
+    await move("#r-login"); await click("#r-login"); if(!alive())return;
+    loginPage(); { const c=$("#rc"); const pr=page.getBoundingClientRect(); c.style.transition="none"; c.style.left=(pr.width-70)+"px"; c.style.top="30px"; void c.offsetWidth; c.style.transition=""; }
+    step("장면 2/8 · 클릭"); cap("아래에 있는 회원가입 버튼을 눌러 주세요."); await wait(500);
+    await move("#r-join"); await click("#r-join"); if(!alive())return;
+    form(); { const c=$("#rc"); c.style.transition="none"; c.style.left="200px"; c.style.top="200px"; void c.offsetWidth; c.style.transition=""; }
+    step("장면 3/8 · 입력"); cap("사용할 아이디를 적어 주세요."); await wait(400);
+    await move("#r-id"); await click("#r-id"); await type("#r-id","taekwon_demo"); if(!alive())return;
+    step("장면 4/8 · 클릭"); cap("옆에 있는 중복확인 버튼을 눌러 주세요."); await wait(300);
+    await move("#r-dup"); await click("#r-dup"); page.querySelector("#r-okid").textContent="✓ 사용 가능"; if(!alive())return;
+    step("장면 5/8 · 입력 (개인정보 흐림)"); cap("이름을 적어 주세요."); await move("#r-name"); await click("#r-name"); await type("#r-name","홍길동",true); if(!alive())return;
+    step("장면 6/8 · 입력 (개인정보 흐림)"); cap("휴대전화 번호를 적어 주세요."); await move("#r-phone"); await click("#r-phone"); await type("#r-phone","010-0000-0000",true); if(!alive())return;
+    step("장면 7/8 · 체크"); cap("약관 전체 동의에 체크해 주세요."); await move("#r-box"); await click("#r-box"); const bx=page.querySelector("#r-box"); bx.classList.add("on"); bx.textContent="✓"; if(!alive())return;
+    step("장면 8/8 · 클릭 (저장 차단)"); cap("마지막으로 등록 버튼을 누르면 끝이에요."); await move("#r-submit"); await click("#r-submit");
+    const t=document.createElement("div"); t.className="rtoast"; t.textContent="저장 요청 차단됨 · 실제 가입 안 됨"; page.appendChild(t); await wait(1200); if(!alive())return;
+    const d=document.createElement("div"); d.className="rdone"; d.innerHTML="<div><b>✓ 녹화 끝</b><br>창이 저절로 닫히고 편집으로 넘어갑니다</div>"; page.appendChild(d);
+    step("녹화 완료 · 장면 8개 · 클릭 위치 8곳 기록"); await wait(1000);
+    if(alive())done();
+  })();
+}
+document.addEventListener("click",e=>{if(e.target&&e.target.id==="replay"){$("#replay").hidden=true;robot(()=>{if($("#replay"))$("#replay").hidden=false})}});
+$("#brandBtn").onclick=()=>{$("#drawer").hidden=false};
+$("#closeDrawer").onclick=()=>{$("#drawer").hidden=true};
+$("#saveBrand").onclick=()=>{$("#drawer").hidden=true};
+$("#saveRules").onclick=()=>{$("#drawer").hidden=true};
+$("#tbB").onchange=()=>{$("#tabBrand").hidden=false;$("#tabRules").hidden=true};
+$("#tbR").onchange=()=>{$("#tabBrand").hidden=true;$("#tabRules").hidden=false};
+$("#drawer").onclick=e=>{if(e.target.id==="drawer")$("#drawer").hidden=true};
+nav();render();
+</script>

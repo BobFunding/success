@@ -1,0 +1,10 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>등록 완료 - 푸른숲 도서관</title><link rel="stylesheet" href="style.css"><style>.menu{display:flex;gap:8px;list-style:none;margin:0;padding:0}.menu>li{position:relative}.menu>li>a{display:block;padding:26px 16px;color:#42506a;text-decoration:none;font-size:17px}
+.menu ul{display:none;position:absolute;left:0;top:72px;background:#fff;border:1px solid #e3e6ec;border-radius:12px;box-shadow:0 12px 28px rgba(20,30,60,.12);list-style:none;margin:0;padding:8px;min-width:180px;z-index:20}
+.menu li:hover>ul{display:block}.menu ul a{display:block;padding:12px 14px;border-radius:8px;color:#1d2433;text-decoration:none}.menu ul a:hover{background:#eef2fb}
+.grid{max-width:1100px;margin:40px auto;display:grid;grid-template-columns:2fr 1fr;gap:24px}.box{background:#fff;border-radius:16px;padding:28px;box-shadow:0 8px 28px rgba(20,30,60,.06)}
+.box h2{margin:0 0 12px;font-size:22px}.todo li{margin:10px 0;font-size:17px}.stat{font-size:40px;font-weight:800;color:#2a5bd7}</style></head>
+<body><header><a class="logo" href="admin.html">푸른숲 도서관</a><ul class="menu"><li><a href="admin.html">대시보드</a></li><li class="has-sub"><a href="#" aria-haspopup="true">회원 관리 ▾</a><ul>
+<li><a href="members.html">회원 목록</a></li><li><a href="member-new.html">회원 등록</a></li></ul></li>
+<li class="has-sub"><a href="#" aria-haspopup="true">자료 관리 ▾</a><ul><li><a href="#">책 등록</a></li><li><a href="#">대출 현황</a></li></ul></li>
+<li><a href="#" onclick="localStorage.removeItem('login');location.href='index.html'">로그아웃</a></li></ul></header>
+<script>if(!localStorage.getItem("login"))location.replace("login.html")</script><div class="card" style="text-align:center"><div style="font-size:72px">✅</div><h1>회원을 등록했어요</h1><p class="sub">회원 목록에서 확인할 수 있어요.</p></div></body></html>
