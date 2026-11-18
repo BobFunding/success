@@ -41,6 +41,32 @@
 - **세로 쇼츠 자동 생성 (새 기능)**: 편집이 끝나면 하이라이트 30~60초를 골라 세로(9:16) 쇼츠 `3_shorts.mp4` 를 함께 만듭니다. Claude 키가 있으면 혼자 봐도 이해되고 첫 문장이 흥미를 끄는 구간과 짧은 제목을 Claude가 고르고, 없으면 말이 촘촘한 구간을 규칙으로 고릅니다(인사말로 시작하는 구간은 피함). 얼굴이 자주 보이면 얼굴을 따라가며 세로로 자르고, 화면 녹화처럼 얼굴이 없으면 흐린 배경 위에 원본을 얹습니다. 위쪽에 제목, 아래쪽에 큰 자막을 넣고, 최종본과 같은 모자이크·삐- 처리를 그대로 적용합니다. 끄려면 `--no-shorts`(웹 화면은 체크 해제), 편집이 끝난 폴더에서 쇼츠만 다시 만들려면 `run.py --shorts <작업폴더>`.
 - **받아쓰기 교정**: Claude 키가 있으면 받아쓰기 직후 Claude가 주제 용어와 문맥을 보고 잘못 받아 적은 단어를 고칩니다(예: "단리"의 실제 발음 [달리] 때문에 "달리는"으로 적힌 것 → "단리는"). 고친 내역은 `report.md` 에 남습니다. 끄려면 `--no-correct`.
 
+## 클라우드 가상 머신(VM)에서 편집하기 — 드라이브 영상 받아 편집 → Output 폴더에 올리기
+
+Claude Code 클라우드 환경처럼 **GPU가 없는 VM**에서는 무거운 일을 API로 돌립니다.
+
+- **받아쓰기**: OpenAI Whisper API(`whisper-1`, 분당 약 0.006달러). 기본값 `--transcribe auto` 는 GPU가 없고 `OPENAI_API_KEY` 가 있으면 자동으로 API를 씁니다. GPU가 있는 PC는 지금처럼 무료 faster-whisper를 씁니다.
+- **구글 드라이브**: 클로드 드라이브 커넥터는 영상을 올리지 못하므로 Drive API를 씁니다.
+
+**준비 (처음 한 번)**
+1. 구글 클라우드 콘솔에서 프로젝트를 만들고 **Google Drive API 사용**을 켭니다.
+2. **서비스 계정**을 만들고(예: Video Test) **키 추가 → JSON** 으로 키 파일을 받습니다.
+3. 드라이브에서 영상을 올릴 폴더(예: `영상 편집/Claude Success`)와 결과 폴더(`Output`)를 **서비스 계정 이메일에 편집자로 공유**합니다.
+4. Claude Code **클라우드 환경**(예: success, 네트워크 '전체')의 환경 변수에 넣습니다.
+   - `OPENAI_API_KEY=sk-...`
+   - `GOOGLE_SERVICE_ACCOUNT_JSON={...}` ← 받은 JSON 내용을 **한 줄로** 붙여 넣습니다(앞뒤에 쉼표·따옴표가 붙어도 읽습니다).
+   - **Anthropic API 키는 넣지 않습니다.** 클라우드 세션은 구독 토큰을 씁니다.
+5. 저장소를 최신 커밋으로 둔 채 새 세션을 시작합니다.
+
+**실행** — 대화로 "구글 드라이브 Claude Success 에 올린 영상 편집해서 Output 폴더에 결과물 올려줘" 라고 하면 아래 명령을 실행합니다.
+```bash
+python run.py --drive-in "영상 편집/Claude Success" --drive-out Output    # 가장 최근 영상 1개 (--all 은 전부)
+python run.py 내영상.mp4 --drive-out Output                                # 이미 있는 영상 편집 후 올리기
+```
+결과는 `Output/<작업 이름>/` 에 `2_final.mp4`, `3_shorts.mp4`, `subtitles.srt`, `report.md` 로 올라가고 링크가 출력됩니다.
+
+> 서비스 계정은 자기 저장 용량이 없어서 **개인(@gmail) 드라이브 폴더에는 올리기가 거부될 수 있습니다**(용량 오류). 그럴 때는 공유 드라이브를 쓰거나, 내 계정 OAuth 값을 `GDRIVE_CLIENT_ID` / `GDRIVE_CLIENT_SECRET` / `GDRIVE_REFRESH_TOKEN` 환경 변수로 넣으세요(PC에서 `run.py --drive-login` 으로 만든 `google_token.json` 안의 값). 키 값은 절대 저장소·채팅·녹화 화면에 남기지 마세요.
+
 ## 결과물 (`output/영상이름_날짜시간/`)
 
 | 파일 | 내용 |

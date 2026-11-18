@@ -26,6 +26,7 @@ def load_dotenv(path: Path = PROJECT_DIR / ".env") -> None:
 class Settings:
     # ── 받아쓰기 ──
     whisper_model: str = "large-v3"
+    transcribe_engine: str = "auto"  # auto = GPU 있으면 PC(무료), GPU 없는 VM 에 OpenAI 키 있으면 Whisper API / local / openai
     language: str = "ko"         # "ko+en" = 언어마다 받아 적고 구간별로 더 잘 들린 쪽을 고름 (섞인 영상)
     vocabulary: list[str] = field(default_factory=list)  # 주제 용어 힌트 (예: 복리, 단리) → 받아쓰기 오류 감소
     transcript_correction: bool = True  # Claude가 용어·문맥을 보고 잘못 받아 적은 단어를 교정 (단어 수·시간은 유지)

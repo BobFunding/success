@@ -26,7 +26,7 @@ run.py               CLI. --rerender <작업폴더> 로 edit_plan.json 기준 �
 autoedit/
   config.py          Settings 데이터클래스 (모든 조절값), .env 로더
   pipeline.py        전체 순서 조율, report.md / subtitles.srt / edit_plan.json 작성
-  transcribe.py      Whisper 받아쓰기, 문장 묶기
+  transcribe.py      Whisper 받아쓰기(PC faster-whisper / GPU 없는 VM 은 OpenAI Whisper API, auto 선택), 문장 묶기
   correct.py         Claude 받아쓰기 교정 (단어 하나 → 단어 하나만, 숫자·필러는 손대지 않음)
   cutter.py          필러 판정, 무음 감지, 남길 구간 계산, TimeMap(원본↔컷 시간 변환), 컷 렌더링
   privacy.py         OCR 기반 화면 개인정보, 대본 기반 음성 개인정보
@@ -38,6 +38,8 @@ autoedit/
   render.py          최종 ffmpeg 합성 (모자이크·삐-·일러스트·스티커·ASS 자막)
   screenfx.py        화면 녹화 편집 (Screen Studio 스타일: 배경 프레임·자동 줌·클릭 효과·대기 구간 빨리 감기).
                      pipeline 과 완전히 별개 — 다른 모듈을 고치거나 부르지 않음
+  gdrive.py          구글 드라이브: PC 는 OAuth 로그인, VM 은 환경 변수(서비스 계정 JSON / OAuth 리프레시 토큰).
+                     폴더 찾기·영상 받기(--drive-in)·결과 올리기(--drive-out)
   llm.py             Claude 호출 래퍼 (구조화 출력, 서버측 fallback, 키 없을 때 비활성화)
   ffmpeg_utils.py    ffmpeg 경로 탐색, probe, NVENC 감지, 필터 스크립트 인자
 tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·API 키 없이 실행)
@@ -65,6 +67,9 @@ tests/               pytest 단위 테스트 (가짜 LLM 사용, Whisper·GPU·A
 - 비밀 키는 `.env` 의 `ANTHROPIC_API_KEY` 에 둡니다. 절대 커밋하지 않습니다.
 
 ## 알려진 함정
+
+- 서비스 계정은 저장 용량이 없어 개인 @gmail 드라이브 폴더에 파일을 만들면 403 storageQuotaExceeded 가 납니다. 공유 드라이브를 쓰거나 GDRIVE_* OAuth 환경 변수로 바꿉니다(`gdrive.upload_file` 이 안내 문구를 띄움).
+- OpenAI 받아쓰기 API 는 파일 25MB 한도 → 16kHz wav 를 10분씩 나눠 보내고 시간을 이어 붙입니다(`transcribe.transcribe_api`). 단어 확신도는 주지 않아 1.0 으로 둡니다.
 
 - 언어가 섞인 영상(한국어+영어 인터뷰)에서 언어를 `ko` 로 고정하면 영어 구간을 통째로 건너뛰고, `multilingual=True` 는 영어를 한국어로 번역해 지어냅니다. `language="ko+en"` 으로 언어마다 받아 적고 구간별로 avg_logprob 가 높은 쪽을 고릅니다(`transcribe.merge_language_passes`).
 - 화면 녹화에서 커서와 글자 입력은 크기로 구분할 수 없습니다(글자가 커서보다 작음). 속도로도 안 됩니다(느린 커서). `screenfx.analyze` 는 '이번 프레임 차이와 다음 프레임 차이가 겹치는 작은 영역 = 커서'로 보고 지웁니다.

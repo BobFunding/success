@@ -6,6 +6,10 @@
   python run.py --shorts output/영상_20261005_120000       # 쇼츠(세로)만 다시 만들기
   python run.py --drive output/영상_20261005_120000        # 결과물을 구글 드라이브에 올리고 링크 출력
   python run.py --drive-login                               # 구글 드라이브 연결만 (처음 한 번 '허용')
+
+  # 클라우드 VM(GPU 없음): 드라이브 폴더의 영상을 받아 편집하고 결과를 Output 폴더에 올리기
+  #   환경 변수: OPENAI_API_KEY(받아쓰기 Whisper API), GOOGLE_SERVICE_ACCOUNT_JSON(드라이브)
+  python run.py --drive-in "영상 편집/Claude Success" --drive-out Output
 """
 import argparse
 from pathlib import Path
@@ -41,6 +45,11 @@ def main() -> None:
     p.add_argument("--translate", default="", help="번역 자막 언어 (예: ko). 외국어 인터뷰에 한국어 자막")
     p.add_argument("--x264-preset", default=Settings.x264_preset, help="GPU 없을 때 인코딩 속도 (veryfast 등)")
     p.add_argument("--whisper", default=Settings.whisper_model, help="Whisper 모델 (large-v3, medium, small)")
+    p.add_argument("--transcribe", choices=["auto", "local", "openai"], default=Settings.transcribe_engine,
+                   help="받아쓰기 방식: auto(GPU 없고 OpenAI 키 있으면 API) / local(PC) / openai(Whisper API)")
+    p.add_argument("--drive-in", metavar="FOLDER", help="이 드라이브 폴더(이름·경로·주소)의 영상을 받아 편집")
+    p.add_argument("--drive-out", metavar="FOLDER", help="결과물을 올릴 드라이브 폴더(예: Output)")
+    p.add_argument("--all", action="store_true", help="(--drive-in) 폴더의 영상을 전부 편집 (기본: 가장 최근 1개)")
     a = p.parse_args()
 
     if a.rerender:
@@ -59,8 +68,8 @@ def main() -> None:
         load_dotenv()
         print(make_shorts(Path(a.shorts), LLM(Settings.model)))
         return
-    if not a.video:
-        p.error("영상 파일을 지정하거나 --rerender 를 사용하세요.")
+    if not a.video and not a.drive_in:
+        p.error("영상 파일을 지정하거나 --rerender / --drive-in 을 사용하세요.")
 
     s = Settings(
         cut_enabled=not a.no_cut,
@@ -78,8 +87,33 @@ def main() -> None:
         transcript_correction=not a.no_correct,
         illustration_engine=a.engine,
         shorts_enabled=not a.no_shorts,
+        transcribe_engine=a.transcribe,
     )
-    run(a.video, s)
+    if a.drive_in:
+        drive_job(a.drive_in, a.drive_out, s, a.all, a.share)
+        return
+    work = run(a.video, s)
+    if a.drive_out:
+        from autoedit import gdrive
+        print(gdrive.links_markdown(gdrive.upload_results(work, share_link=a.share, target=a.drive_out)))
+
+
+def drive_job(src: str, dst: str | None, s: Settings, every: bool, share: bool) -> None:
+    """드라이브 폴더의 영상 → 내려받기 → 자동 편집 → 결과 올리기. 영상은 input/ 에 받는다(커밋 안 함)."""
+    from autoedit import gdrive
+    from autoedit.config import PROJECT_DIR
+    load_dotenv()
+    sess = gdrive.session(interactive=False)
+    folder = gdrive.find_folder(sess, src)
+    videos = gdrive.list_videos(sess, folder["id"])
+    if not videos:
+        raise SystemExit(f"'{folder.get('name', src)}' 폴더에 영상이 없습니다.")
+    for f in videos if every else videos[:1]:
+        print(f"[드라이브] 편집할 영상: {f['name']}")
+        local = gdrive.download_file(sess, f, PROJECT_DIR / "input")
+        work = run(local, s)
+        result = gdrive.upload_results(work, share_link=share, sess=sess, target=dst)
+        print(gdrive.links_markdown(result))
 
 
 if __name__ == "__main__":

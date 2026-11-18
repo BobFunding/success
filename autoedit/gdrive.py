@@ -7,6 +7,14 @@
   프로젝트 폴더에 google_client_secret.json 이름으로 둔다. 순서는 README '구글 드라이브 연결' 절.
 - 폴더: 내 드라이브 > 유튜브 자동 편집기 > <작업 폴더 이름>. 같은 작업을 다시 올리면 같은 폴더를 쓴다.
 - 링크: 기본은 '나만 보기'(같은 구글 계정으로 로그인한 휴대폰에서 열림). 원하면 '링크가 있는 누구나 보기'.
+
+클라우드 VM(Claude Code 클라우드 환경)에서는 브라우저 로그인을 할 수 없으므로 환경 변수로 연결한다.
+- GOOGLE_SERVICE_ACCOUNT_JSON: 서비스 계정 JSON 키 내용(한 줄로 붙여 넣어도 됨). 드라이브의 입력 폴더와
+  Output 폴더를 서비스 계정 이메일에 '편집자'로 공유해 두면 그 폴더에서 영상을 받고 결과를 올린다.
+  단, 서비스 계정은 자기 저장 용량이 없어 개인(@gmail) 드라이브 폴더에는 업로드가 거부될 수 있다
+  → 공유 드라이브(Workspace)를 쓰거나 아래 OAuth 환경 변수 방식을 쓴다.
+- GDRIVE_CLIENT_ID / GDRIVE_CLIENT_SECRET / GDRIVE_REFRESH_TOKEN: 내 계정으로 올리는 OAuth 방식
+  (PC 에서 한 번 로그인해 만든 google_token.json 안의 값). 용량 문제가 없다.
 """
 from __future__ import annotations
 
@@ -22,6 +30,7 @@ API = "https://www.googleapis.com/drive/v3"
 UPLOAD = "https://www.googleapis.com/upload/drive/v3/files"
 FOLDER_MIME = "application/vnd.google-apps.folder"
 ROOT_NAME = "유튜브 자동 편집기"
+ALL_DRIVES = {"supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}   # 공유 드라이브도 찾기
 CHUNK = 8 * 1024 * 1024                     # 큰 영상은 8MB씩 나눠 올린다(끊겨도 그 조각만 다시)
 # 올릴 결과물(있는 것만). 1_cut.mp4 는 중간본이라 올리지 않는다.
 RESULT_FILES = ["2_final.mp4", "3_shorts.mp4", "subtitles.srt", "report.md"]
@@ -39,8 +48,58 @@ def token_file() -> Path:
     return Path(os.environ.get("GOOGLE_TOKEN_FILE") or PROJECT_DIR / "google_token.json")
 
 
+FULL_SCOPES = ["https://www.googleapis.com/auth/drive"]   # 서비스 계정: 공유받은 폴더를 보려면 전체 범위가 필요
+
+
+def parse_json_env(text: str) -> dict:
+    """환경 변수에 붙여 넣은 JSON 을 읽는다. 앞뒤 따옴표·쉼표·줄바꿈이 붙어 있어도 { ... } 부분만 읽는다."""
+    a, b = text.find("{"), text.rfind("}")
+    if a < 0 or b < a:
+        raise DriveNotReady("GOOGLE_SERVICE_ACCOUNT_JSON 이 JSON 형식이 아닙니다. 받은 키 파일 내용을 그대로 붙여 넣어 주세요.")
+    return json.loads(text[a:b + 1], strict=False)
+
+
+def env_mode() -> str:
+    """환경 변수로 연결하는 방식: service(서비스 계정) / oauth-env(리프레시 토큰) / ''(없음)."""
+    if os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE"):
+        return "service"
+    if all(os.environ.get(k) for k in ("GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN")):
+        return "oauth-env"
+    return ""
+
+
+def env_credentials():
+    """환경 변수로 만든 인증 정보(없으면 None). 클라우드 VM 처럼 브라우저 로그인이 안 되는 곳에서 쓴다."""
+    mode = env_mode()
+    if mode == "service":
+        from google.oauth2 import service_account
+        raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or \
+            Path(os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"]).read_text(encoding="utf-8")
+        return service_account.Credentials.from_service_account_info(parse_json_env(raw), scopes=FULL_SCOPES)
+    if mode == "oauth-env":
+        from google.oauth2.credentials import Credentials
+        return Credentials(None, refresh_token=os.environ["GDRIVE_REFRESH_TOKEN"],
+                           token_uri="https://oauth2.googleapis.com/token",
+                           client_id=os.environ["GDRIVE_CLIENT_ID"], client_secret=os.environ["GDRIVE_CLIENT_SECRET"])
+    return None
+
+
+def service_email() -> str:
+    try:
+        raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or \
+            Path(os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"]).read_text(encoding="utf-8")
+        return parse_json_env(raw).get("client_email", "")
+    except Exception:
+        return ""
+
+
 def status() -> str:
     """웹 화면에 보여 줄 연결 상태 한 줄."""
+    mode = env_mode()
+    if mode == "service":
+        return f"연결됨 (서비스 계정 {service_email() or '?'} — 폴더를 이 이메일에 편집자로 공유)"
+    if mode == "oauth-env":
+        return "연결됨 (환경 변수 OAuth)"
     if token_file().exists():
         return "연결됨"
     if client_file().exists():
@@ -91,6 +150,10 @@ def _save_token(creds) -> None:
 
 def session(interactive: bool = True, log=print):
     from google.auth.transport.requests import AuthorizedSession
+    creds = env_credentials()
+    if creds is not None:
+        log(f"[드라이브] 환경 변수로 연결: {'서비스 계정 ' + service_email() if env_mode() == 'service' else 'OAuth'}")
+        return AuthorizedSession(creds)
     return AuthorizedSession(credentials(interactive, log))
 
 
@@ -110,11 +173,12 @@ def find_or_create_folder(sess, name: str, parent: str | None = None) -> dict:
     if parent:
         q += f" and '{parent}' in parents"
     found = _check(sess.get(f"{API}/files", params={"q": q, "fields": "files(id,name,webViewLink)",
-                                                   "spaces": "drive", "pageSize": 1}), "폴더 찾기")
+                                                   "pageSize": 1, **ALL_DRIVES}), "폴더 찾기")
     if found.get("files"):
         return found["files"][0]
     meta = {"name": name, "mimeType": FOLDER_MIME, **({"parents": [parent]} if parent else {})}
-    return _check(sess.post(f"{API}/files", params={"fields": "id,name,webViewLink"}, json=meta), "폴더 만들기")
+    return _check(sess.post(f"{API}/files", params={"fields": "id,name,webViewLink", "supportsAllDrives": "true"},
+                            json=meta), "폴더 만들기")
 
 
 def upload_file(sess, path: Path, parent: str, log=print) -> dict:
@@ -125,9 +189,14 @@ def upload_file(sess, path: Path, parent: str, log=print) -> dict:
         mime = "text/plain"
     if path.suffix == ".md":
         mime = "text/markdown"
-    start = sess.post(UPLOAD, params={"uploadType": "resumable", "fields": "id,name,webViewLink"},
+    start = sess.post(UPLOAD, params={"uploadType": "resumable", "fields": "id,name,webViewLink",
+                                      "supportsAllDrives": "true"},
                       json={"name": path.name, "parents": [parent]},
                       headers={"X-Upload-Content-Type": mime, "X-Upload-Content-Length": str(size)})
+    if start.status_code == 403 and "storageQuota" in start.text:
+        raise DriveNotReady("서비스 계정은 자기 저장 용량이 없어 개인 드라이브 폴더에 올릴 수 없습니다. "
+                            "Output 폴더를 공유 드라이브에 두거나, GDRIVE_CLIENT_ID/SECRET/REFRESH_TOKEN "
+                            "환경 변수(내 계정 OAuth)로 바꿔 주세요.")
     if start.status_code >= 400 or "Location" not in start.headers:
         raise RuntimeError(f"{path.name} 올리기 시작 실패 ({start.status_code}): {start.text[:300]}")
     url = start.headers["Location"]
@@ -157,14 +226,85 @@ def share_anyone(sess, file_id: str) -> None:
            "링크 공유 설정")
 
 
-def upload_results(work: Path, share_link: bool = False, sess=None, log=print) -> dict:
-    """작업 폴더의 결과물을 드라이브에 올리고 링크를 drive.json 에 남긴다."""
+def folder_id_from(ref: str) -> str | None:
+    """폴더 주소(https://drive.google.com/drive/folders/<id>)나 id 를 id 로. 이름이면 None."""
+    import re
+    m = re.search(r"/folders/([A-Za-z0-9_-]{10,})", ref)
+    if m:
+        return m.group(1)
+    return ref if re.fullmatch(r"[A-Za-z0-9_-]{25,}", ref) else None
+
+
+def find_folder(sess, ref: str) -> dict:
+    """주소·id·이름(예: 'Output', '영상 편집/Claude Success')으로 이미 있는 폴더를 찾는다. 없으면 만들지 않고 알린다
+    (서비스 계정이 자기 드라이브에 만들면 사용자에게 보이지 않으므로)."""
+    fid = folder_id_from(ref)
+    if fid:
+        return _check(sess.get(f"{API}/files/{fid}", params={"fields": "id,name,webViewLink",
+                                                              "supportsAllDrives": "true"}), "폴더 열기")
+    parent = None
+    found: dict = {}
+    for name in [x.strip() for x in ref.strip("/").split("/") if x.strip()]:
+        q = f"name = '{_q(name)}' and mimeType = '{FOLDER_MIME}' and trashed = false"
+        if parent:
+            q += f" and '{parent}' in parents"
+        files = _check(sess.get(f"{API}/files", params={"q": q, "fields": "files(id,name,webViewLink)",
+                                                       "pageSize": 1, **ALL_DRIVES}), "폴더 찾기").get("files")
+        if not files:
+            who = f" 서비스 계정 이메일({service_email()})에 편집자로 공유했는지" if env_mode() == "service" else ""
+            raise DriveNotReady(f"드라이브에서 '{name}' 폴더를 찾지 못했습니다. 이름과{who} 확인해 주세요.")
+        found = files[0]
+        parent = found["id"]
+    return found
+
+
+VIDEO_EXT = (".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi")
+
+
+def list_videos(sess, folder_id: str) -> list[dict]:
+    """폴더 안의 영상 목록(최근 것 먼저)."""
+    q = f"'{folder_id}' in parents and trashed = false and mimeType != '{FOLDER_MIME}'"
+    files = _check(sess.get(f"{API}/files", params={"q": q, "orderBy": "modifiedTime desc", "pageSize": 100,
+                                                   "fields": "files(id,name,mimeType,size)", **ALL_DRIVES}),
+                   "영상 목록").get("files", [])
+    return [f for f in files if f.get("mimeType", "").startswith("video/") or f["name"].lower().endswith(VIDEO_EXT)]
+
+
+def download_file(sess, file: dict, dest_dir: Path, log=print) -> Path:
+    """드라이브 파일을 내려받는다(큰 영상도 조금씩 받아 저장)."""
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dst = dest_dir / Path(file["name"]).name
+    r = sess.get(f"{API}/files/{file['id']}", params={"alt": "media", "supportsAllDrives": "true"}, stream=True)
+    if r.status_code >= 400:
+        raise RuntimeError(f"{file['name']} 내려받기 실패 ({r.status_code}): {r.text[:300]}")
+    got = 0
+    with dst.open("wb") as f:
+        for chunk in r.iter_content(CHUNK):
+            f.write(chunk)
+            got += len(chunk)
+    log(f"[드라이브] {file['name']} 받음 ({got / 1e6:.1f}MB)")
+    return dst
+
+
+def upload_results(work: Path, share_link: bool = False, sess=None, log=print, target: str | None = None) -> dict:
+    """작업 폴더의 결과물을 드라이브에 올리고 링크를 drive.json 에 남긴다.
+    target: 올릴 폴더(주소·id·이름, 예: 'Output'). 그 안에 작업 이름 폴더를 만들어 넣는다.
+    없으면 내 드라이브 > 유튜브 자동 편집기 > 작업 이름."""
     work = Path(work)
     files = [work / n for n in RESULT_FILES if (work / n).exists()]
     if not files:
         raise RuntimeError("올릴 결과물이 없습니다 (편집이 끝난 폴더인지 확인해 주세요).")
     sess = sess or session(log=log)
-    root = find_or_create_folder(sess, ROOT_NAME)
+    if target:
+        root = find_folder(sess, target)
+        root_name = root.get("name", target)
+    else:
+        if env_mode() == "service":
+            raise DriveNotReady("서비스 계정으로는 올릴 폴더를 지정해야 합니다(예: --drive-out Output). "
+                                "그 폴더를 서비스 계정 이메일에 편집자로 공유해 주세요.")
+        root = find_or_create_folder(sess, ROOT_NAME)
+        root_name = ROOT_NAME
     folder = find_or_create_folder(sess, work.name, root["id"])
     if share_link:
         share_anyone(sess, folder["id"])          # 폴더를 공유하면 안의 파일도 같이 열린다
@@ -173,7 +313,7 @@ def upload_results(work: Path, share_link: bool = False, sess=None, log=print) -
         log(f"[드라이브] {p.name} 올리는 중 ({p.stat().st_size / 1e6:.1f}MB)")
         meta = upload_file(sess, p, folder["id"], log)
         out.append({"name": p.name, "id": meta.get("id"), "link": meta.get("webViewLink")})
-    result = {"folder": {"name": f"{ROOT_NAME}/{work.name}", "id": folder["id"], "link": folder.get("webViewLink")},
+    result = {"folder": {"name": f"{root_name}/{work.name}", "id": folder["id"], "link": folder.get("webViewLink")},
               "shared_with_anyone": share_link, "files": out}
     (work / "drive.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     log(f"[드라이브] 완료: {result['folder']['link']}")

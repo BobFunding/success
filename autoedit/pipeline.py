@@ -180,7 +180,8 @@ def run(video: str | Path, settings: Settings | None = None, out_root: Path | No
     fixes: list[dict] = []
     if info.has_audio:
         extract_audio(video, wav)
-        words = transcribe(wav, settings.whisper_model, settings.language, settings.vocabulary, log)
+        words = transcribe(wav, settings.whisper_model, settings.language, settings.vocabulary, log,
+                           engine=settings.transcribe_engine)
         if settings.transcript_correction:
             words, fixes = correct_transcript(words, settings.vocabulary, llm, log)
     else:

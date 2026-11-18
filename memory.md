@@ -318,3 +318,9 @@
 - 1안: 클라우드 VM(GPU 없음, CPU)에서 짧은 영상(숏폼) 편집이나 다른 자동화를 시험.
 - 2안(권장): Claude Code/Codex 환경을 내 PC(로컬)로 두고, 휴대폰 앱 대화에서 이어서 명령 → 구글 드라이브 영상을 PC로 받기 → PC 프로그램으로 편집 → 결과를 드라이브에 올리기.
 - 지금까지(2026-11-18): 클라우드에서 쇼츠 생성 + Claude 드라이브 커넥터로 폴더 '유튜브 자동 편집기 - 쇼츠 업그레이드'(id 1Z_-gAUPGTMsHiv47PLsxcsX51yWwujhl)에 올림. 커넥터 한 번에 약 3MB 제한 → 큰 영상은 720p 압축. 드라이브 '처리 중' 문구는 구글 쪽이라 못 끔 → 바로 받기 링크(uc?export=download&id=) 같이 주기. 빠진 단계: '드라이브에서 받아서' 편집.
+
+### 2026-11-18 · 강의 영상 'VM에서 영상편집할때 세팅' 방식에 맞춤 (사용자: '저렇게 맞춰야 된다')
+- 강의 영상(드라이브 id 1ahHNP2AstudRnrqzecFTiuIGgghiwDxx, 7분) 내용: VM 은 GPU 없음 → 받아쓰기는 OpenAI Whisper API / 클라우드 환경 'Success'(네트워크 전체, 환경 변수 OPENAI 키 + 구글 서비스 계정 JSON, Anthropic 키는 넣지 않음) / 드라이브 Output 폴더를 서비스 계정 이메일에 편집자 공유 / '드라이브 Claude Success 영상 편집해서 Output 에 올려줘'.
+- 확인 당시 상태: 클라우드 환경 'success'(네트워크 전체)는 있었지만 **환경 변수 0개**, 코드에 Whisper API·서비스 계정 없음 → 이번에 만듦.
+- 코드: transcribe.py `transcribe_engine`(auto/local/openai, auto = GPU 없고 OPENAI 키 있으면 API, 10분 조각) / gdrive.py 환경 변수 연결(GOOGLE_SERVICE_ACCOUNT_JSON 앞뒤 쉼표 허용, 또는 GDRIVE_CLIENT_ID/SECRET/REFRESH_TOKEN), 폴더 찾기(경로·주소·id, 공유 드라이브), 영상 목록·받기, 용량 오류 안내 / run.py `--drive-in <폴더> --drive-out Output [--all]`, `--transcribe` / app.py 받아쓰기 방식·올릴 폴더 칸. 테스트 tests/test_vm.py 10개(전체 187 통과), 실제 openai SDK 요청 모양은 가짜 서버로 확인.
+- 남은 것: 사용자가 클라우드 환경 success 에 OPENAI_API_KEY·GOOGLE_SERVICE_ACCOUNT_JSON 넣기(설정 화면, 채팅에 붙이지 말 것) + 폴더 공유 → 새 세션에서 실제 드라이브 영상으로 끝까지 실행. 강의 영상 화면에 키 값이 보이는 것 같음 → 공유 전 키 재발급 권고함.
