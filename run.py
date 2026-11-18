@@ -4,6 +4,8 @@
   python run.py 영상.mp4 --no-illust --allow "홍길동,내채널"
   python run.py --rerender output/영상_20261005_120000     # edit_plan.json 수정 후 최종본만 다시
   python run.py --shorts output/영상_20261005_120000       # 쇼츠(세로)만 다시 만들기
+  python run.py --drive output/영상_20261005_120000        # 결과물을 구글 드라이브에 올리고 링크 출력
+  python run.py --drive-login                               # 구글 드라이브 연결만 (처음 한 번 '허용')
 """
 import argparse
 from pathlib import Path
@@ -20,6 +22,9 @@ def main() -> None:
     p.add_argument("--rerender", metavar="WORK_DIR", help="edit_plan.json 기준으로 최종본만 다시 렌더링")
     p.add_argument("--shorts", metavar="WORK_DIR", help="편집이 끝난 폴더에서 쇼츠(세로 9:16)만 다시 만들기")
     p.add_argument("--no-shorts", action="store_true", help="쇼츠(세로) 만들기 끄기")
+    p.add_argument("--drive", metavar="WORK_DIR", help="결과물을 구글 드라이브에 올리고 링크 출력")
+    p.add_argument("--drive-login", action="store_true", help="구글 드라이브 연결(로그인)만 하기")
+    p.add_argument("--share", action="store_true", help="(--drive) 링크가 있는 누구나 보기로 공유")
     p.add_argument("--no-cut", action="store_true", help="컷 편집 끄기")
     p.add_argument("--no-illust", action="store_true", help="설명 일러스트 끄기")
     p.add_argument("--no-privacy", action="store_true", help="개인정보 처리 끄기")
@@ -40,6 +45,15 @@ def main() -> None:
 
     if a.rerender:
         print(render_from_plan(Path(a.rerender)))
+        return
+    if a.drive_login:
+        from autoedit import gdrive
+        gdrive.credentials()
+        print("구글 드라이브 연결 완료:", gdrive.status())
+        return
+    if a.drive:
+        from autoedit import gdrive
+        print(gdrive.links_markdown(gdrive.upload_results(Path(a.drive), share_link=a.share)))
         return
     if a.shorts:
         load_dotenv()

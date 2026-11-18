@@ -1,5 +1,9 @@
 # 비밀 키 — 절대 커밋하지 않음 (.env.example 은 커밋)
 .env
+# 구글 드라이브 연결: OAuth 클라이언트 파일과 로그인 토큰(이 PC 에만 둠)
+google_client_secret.json
+google_token.json
+client_secret*.json
 .env.*
 !.env.example
 

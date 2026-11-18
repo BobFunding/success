@@ -9,3 +9,6 @@ opencv-python-headless<5   # 5.x 에는 얼굴 찾기(CascadeClassifier)가 없�
 resvg-py
 gradio
 numpy
+google-auth
+google-auth-oauthlib
+requests

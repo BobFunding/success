@@ -307,3 +307,9 @@
 - 연결: Settings.shorts_enabled/min/max, pipeline 6단계(실패해도 본편 유지), run.py `--shorts <폴더>`·`--no-shorts`, app.py 체크박스 + '세로 쇼츠 (9:16)' 결과 칸. 테스트 `tests/test_shorts.py` 14개(편집기 쪽 84개 통과).
 - 확인(클라우드 Linux, Claude 키 없이 규칙 선택): 시험 재료 = edge-tts 목소리 65초 + 공개 사진(아인슈타인, 위키미디어 공용) 얼굴이 움직이는 영상 / 화면 녹화 같은 영상, 전화번호 글자 모자이크·말 삐-. 얼굴 crop: 얼굴이 계속 가운데, 제목·자막 정상, 삐- 1kHz 확인(-36dB vs -52dB). fit: 모자이크 유지. 웹 화면 체크박스·결과 칸 화면 확인.
 - 함정: opencv 5.x 는 CascadeClassifier 없음 → requirements 에 `<5` 고정. 못 한 것: 실제 Claude 키로 구간·제목 선택, Whisper 받아쓰기부터 웹 화면 전체 흐름(이 컨테이너에 faster-whisper 없음), Windows 맑은 고딕 렌더.
+
+### 2026-11-18 · 앱 안 구글 드라이브 올리기 (진행 중, 실제 로그인 확인 전)
+- `autoedit/gdrive.py`: OAuth 데스크톱 앱(drive.file 권한만), 토큰 google_token.json·클라이언트 google_client_secret.json 은 .gitignore. 내 드라이브 > 유튜브 자동 편집기 > <작업폴더> 에 2_final·3_shorts·subtitles.srt·report.md 를 8MB 조각 이어 올리기, drive.json·링크(기본 나만 보기, 선택 시 링크 누구나).
+- app.py: '구글 드라이브' 접기 칸(연결 상태·자동 올리기·링크 공유) + '드라이브에 올리고 링크 만들기' 버튼·링크 표시. run.py `--drive <폴더> [--share]`, `--drive-login`. 테스트 tests/test_gdrive.py(가짜 세션).
+- 남은 것: README '구글 드라이브 연결' 절(구글 클라우드 OAuth 클라이언트 만드는 순서) 쓰기, 사용자 PC 에서 실제 로그인·올리기 확인.
+- Claude 쪽 구글 드라이브 커넥터는 읽기 전용이라 폴더 만들기 실패 → 사용자에게 커넥터 재연결(쓰기 권한) 요청함. 재연결되면 '유튜브 자동 편집기 - 쇼츠 업그레이드' 폴더 만들고 쇼츠 예시 2개·웹 화면 사진 올리고 링크 주기.
