@@ -59,9 +59,19 @@ def parse_json_env(text: str) -> dict:
     return json.loads(text[a:b + 1], strict=False)
 
 
+def _sa_raw() -> str:
+    """서비스 계정 JSON (GOOGLE_SERVICE_ACCOUNT_JSON 또는 같은 뜻의 GDRIVE_SERVICE_ACCOUNT_JSON, 또는 파일 경로)."""
+    raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or os.environ.get("GDRIVE_SERVICE_ACCOUNT_JSON")
+    if raw:
+        return raw
+    path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
+    return Path(path).read_text(encoding="utf-8") if path else ""
+
+
 def env_mode() -> str:
     """환경 변수로 연결하는 방식: service(서비스 계정) / oauth-env(리프레시 토큰) / ''(없음)."""
-    if os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE"):
+    if any(os.environ.get(k) for k in ("GOOGLE_SERVICE_ACCOUNT_JSON", "GDRIVE_SERVICE_ACCOUNT_JSON",
+                                       "GOOGLE_SERVICE_ACCOUNT_FILE")):
         return "service"
     if all(os.environ.get(k) for k in ("GDRIVE_CLIENT_ID", "GDRIVE_CLIENT_SECRET", "GDRIVE_REFRESH_TOKEN")):
         return "oauth-env"
@@ -73,8 +83,7 @@ def env_credentials():
     mode = env_mode()
     if mode == "service":
         from google.oauth2 import service_account
-        raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or \
-            Path(os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"]).read_text(encoding="utf-8")
+        raw = _sa_raw()
         return service_account.Credentials.from_service_account_info(parse_json_env(raw), scopes=FULL_SCOPES)
     if mode == "oauth-env":
         from google.oauth2.credentials import Credentials
@@ -86,9 +95,7 @@ def env_credentials():
 
 def service_email() -> str:
     try:
-        raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or \
-            Path(os.environ["GOOGLE_SERVICE_ACCOUNT_FILE"]).read_text(encoding="utf-8")
-        return parse_json_env(raw).get("client_email", "")
+        return parse_json_env(_sa_raw()).get("client_email", "")
     except Exception:
         return ""
 

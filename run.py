@@ -8,7 +8,7 @@
   python run.py --drive-login                               # 구글 드라이브 연결만 (처음 한 번 '허용')
 
   # 클라우드 VM(GPU 없음): 드라이브 폴더의 영상을 받아 편집하고 결과를 Output 폴더에 올리기
-  #   환경 변수: OPENAI_API_KEY(받아쓰기 Whisper API), GOOGLE_SERVICE_ACCOUNT_JSON(드라이브)
+  #   환경 변수: OPENAI_API_KEY(받아쓰기 Whisper API), GOOGLE_SERVICE_ACCOUNT_JSON 또는 GDRIVE_SERVICE_ACCOUNT_JSON(드라이브)
   python run.py --drive-in "영상 편집/Claude Success" --drive-out Output
 """
 import argparse

@@ -157,3 +157,9 @@ def test_service_account_needs_target(tmp_path, monkeypatch):
     (tmp_path / "report.md").write_text("x", encoding="utf-8")
     with pytest.raises(gdrive.DriveNotReady, match="--drive-out"):
         gdrive.upload_results(tmp_path, sess=DriveTree(), log=lambda *_: None)
+
+
+def test_gdrive_alias_name(monkeypatch):
+    monkeypatch.delenv("GOOGLE_SERVICE_ACCOUNT_JSON", raising=False)
+    monkeypatch.setenv("GDRIVE_SERVICE_ACCOUNT_JSON", "'" + json.dumps(SA, indent=2) + "'")   # 여러 줄·작은따옴표
+    assert gdrive.env_mode() == "service" and gdrive.service_email() == SA["client_email"]
